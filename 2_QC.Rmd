@@ -20,7 +20,8 @@ knitr::opts_chunk$set(echo = F,
                       cache=F, cache.comments = F, 
                       message = F, warning = F, 
                       tidy.opts=list(width.cutoff=60), tidy=TRUE,
-                      fig.height = 5, fig.width = 8
+                      #fig.height = 5, fig.width = 8
+                      fig.height = 6, fig.width = 10
                       )  
 
 # # Clear workspace of all objects and unload all extra (non-base) packages
@@ -33,6 +34,7 @@ knitr::opts_chunk$set(echo = F,
 
 pacman::p_load(knitr, kableExtra, 
                ggpubr, tidyverse,
+               ggrepel, #geom_label_repel
                #mapping...adding scales, N arrows
                ggmap, sf, ggspatial, 
                units, #convert between e.g., m to km
@@ -57,88 +59,643 @@ end_date <- "2020-03-17" #or: "2020-03-18" to capture all of 3/17 ?
 
 pt_pollutants <- c("PM", "BC")
 
+#air pollutants of immediate interest
+ap <- c(
+  #CO2
+  "co2_umol_mol",
+  #aethalometer
+  "ma200_ir_bc1",
+  #neph
+  "neph_bscat", #"neph_ccoef",
+  #no2
+  "no2",
+  #nanoscan
+  "ns_total_conc",
+  # discmini
+  'pmdisc_number',  
+  #ptraks
+  "pnc_noscreen", "pnc_screen"
+  )
+
+unique_routes <- paste0("R0", c(1:9))
+
+#drop instruments w/ few readings (only want a primary and backup instrument if possbile)
+drop_instruments <-  c(paste0("PMPT_", c(1,2,4)),
+                               paste0("PMPTSCREEN_", c(1,4))
+)
 ```
 
-### --> add lab duplicate collocation data 
+### --> add lab duplicate collocation data    
+### --> ? need to address instrument flag issues?
+
+## helper tables
 
 ```{r}
-#imports, fieldnotes, and calibraiton tables
-## calibration table inlcudes calibrations for gases and zero checks for instruments
-load(file.path("Data", "imports_fieldnotes_calib_tables.rda"))
+#imports, fieldnotes, and location tables
+load(file.path("Data", "imports_fieldnotes_location_tables.rda"))
 
-#basic file w/ start/end dates
-calibrations <- calibrations %>%
-  # add instrument-specific data. don't include confusing timestamp, which is when files were reuploaded to database in 2021
-  left_join(select(imports, -timestamp)) %>%
-  #only look at calibrations soon after campaign ended. note, NO2 has some calirbations in 5/2020
-  filter(endtime <= ymd(end_date)+1) %>%
-  #add date
-  mutate(date = ymd(substr(runname, 1,10))) %>%
-  arrange(date)
+calibrations <- readRDS(file.path("Data", "lab_calibrations_in_fixed_rooms.rda")) %>%
+  mutate(date = ymd(substr(time, 1, 10))) %>%
+  filter(
+    #not sure why tim measured these  
+    !analyte %in% c("no, nox"),
+    # only keep instrument readings we're interested in
+    variable %in% ap,
+    #drop instruments w/ few readings (only want a primary and backup instrument)
+    !instrument_id %in% drop_instruments
+  ) %>%
+  
+  #drop analyte since this is sometimes wrong (Amanda); other variables make duplicate rows - due to merging issue earlier?
+  select(-c(analyte, id, import_id, level)) %>%
+  distinct() %>%
+  drop_na(instrument_id, variable, value)
 
-lab_calibrations <- readRDS(file.path("Data", "lab_calibrations.rda"))
+```
 
+## stop data
+
+```{r}
 #all stop data
-dt0 <- readRDS(file.path("Data", "stop_data_2019-02-22_2020-03-17.rda"))
+dt0 <- readRDS(file.path("Data", "stop_data_2019-02-22_2020-03-17.rda")) %>%
+  mutate(date = ymd(substr(time, 1, 10))) %>%
+  filter(
+    # only keep instrument readings we're interested in
+    variable %in% ap,
+    #drop instruments w/ few readings (only want a primary and backup instrument)
+    !instrument_id %in% drop_instruments,
+    #drop Roosevelt Garage
+    #location != "MS0000"
+  ) %>%
+  #drop empty data
+  drop_na(value) %>%
+  # drop ~ 700 duplicate rows - why are these here?? MS000?
+  distinct()
+  
+
+#ID primary instruments
+primary_instruments <- dt0 %>%
+  group_by(variable, instrument_id) %>%
+  summarize(
+    n = n()
+  ) %>% 
+  group_by(variable) %>%
+  filter(n == max(n)) %>%
+  ungroup() %>%
+  pull(instrument_id)
+ 
+dt0 <- dt0 %>%
+  mutate(primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup" ),
+         primary_instrument = factor(primary_instrument, levels = c("Primary", "Backup"))
+         )
+
+
+# DUPLICATE ROWS??
+# There ~ 15k rows w/ duplicate information other than the value column. Looks like co_14 (the primary CO2 instrument) was primarily responsible for this - it reported duplicate readings at any given time. Duplicate readings appear to be very similar. Was this related to an instrument logging issues?? We'll average over these.
+
+#dt0 %>% select_at(vars(-value)) %>% distinct() %>% nrow() #6283650
+  
+# dt0 %>% 
+#   select(location, time, instrument_id, value) %>% 
+#   
+#   slice(2974420, 2974421, 4056517, 4056518, 4056523, 4056524, 4056529, 4056530, 4056535, 4056536, 4056541, 4056542, 4056549, 4056550 , 4056555, 4056556, 4056561, 4056562, 4056567, 4056568, 4056573, 4056574, 4056579, 4056580, 4056585, 4056586, 4056591, 4056592, 4056597, 4056598, 4056603, 4056604, 4056611, 4056612, 4056617, 4056618, 4056623, 4056624, 4056629, 4056630, 4056635, 4056636
+# , 4056641, 4056642
+# , 4056647, 4056648
+# , 4056653, 4056654
+# , 4056659, 4056660
+# , 4056665, 4056666
+# , 4056673, 4056674
+# , 4056679, 4056680
+# , 4056685, 4056686
+# , 4056691, 4056692
+# , 4056697, 4056698
+# , 4056703, 4056704
+# , 4056709, 4056710
+# , 4056715, 4056716
+# , 4056721, 4056722
+# , 4056727, 4056728
+# , 4056735, 4056736
+# , 4056741, 4056742
+# , 4056747, 4056748
+# , 4056753, 4056754
+# , 4056759, 4056760
+# , 4056765, 4056766
+# , 4056771, 4056772
+# , 4056777, 4056778
+# , 4056783, 4056784
+# , 4056789, 4056790
+# , 4056797, #4056
+#         ) %>% View()
+  
+   
+dt0 <- dt0 %>% 
+  #take avg of duplicate CO2_14 rows w/ slightly different values
+  group_by_at(vars(-value)) %>% 
+  summarize(value = mean(value)) %>% 
+  ungroup()
+
+dt0_w <- dt0 %>%
+  select(-c(variable, primary_instrument)) %>%
+  spread(instrument_id, value) %>%
+  arrange(time)
+  
+```
+
+```{r}
+#types of instruments
+instruments <- unique(dt0$instrument_id) %>%
+  str_extract(., "[^_]+") %>%
+  unique() %>%
+  sort()
+
+```
+
+ 
+```{r, eval=F}
+# don't add stop_route_no since results in sites w/ missing visited number?
+
+#sequence of stop order based on a run. Using runs after the campaign had run for a while, since some changes happened early on. The resulting numbering should be mostly accurate for the rest of the campaign.
+
+first_run <- dt0 %>%
+  #don't consider initial runs
+  filter(date > ymd("2019-04-01"),
+         location != "MS0000"
+         ) %>%  
+  
+  group_by(site) %>%
+  filter(time == min(time)) %>% 
+  ungroup() %>%
+  distinct(runname) %>% pull()
+  
+run_stop_order <- dt0 %>%
+  #only keep first run of each route
+  filter(runname %in% first_run,
+         location != "MS0000"
+         ) %>%
+  
+  group_by(runname, location) %>%
+  mutate(arrival_time = min(time)) %>% 
+  ungroup() %>%
+  distinct(runname, location, arrival_time) %>% 
+  group_by(runname) %>%
+  #number stop order within each day
+  mutate(run_stop_no = row_number(),
+         run_stop_no = str_pad(run_stop_no, width = 2, side = "left", pad = "0")
+         ) %>%
+  ungroup() %>%
+  select(location, run_stop_no)
+
+#unique(dt0$run_stop_no)
+
+#dim(left_join(dt0, run_stop_order))
+
+# add stop order within a route
+dt0 <- left_join(dt0, run_stop_order)
+
+# # how many sites have NAs (location not visited within that runname)
+# dt0 %>%
+#   filter(is.na(run_stop_no)) %>%
+#   distinct(location) %>%
+#   nrow()
+
+```
+
+## DOE 
+
+### --> need to adjust DOE data for daylight savings? [Dave is looking into it]
+
+```{r}
+doe0 <- readRDS(file.path("Data", "doe_dt.rda"))
+
+drop_doe_vars <- c(
+  #don't need/know what theese are 
+  "doe_uv_633", "doe_ref_mc", "doe_base_mc", "doe_trace_co",
+  
+  # # have no2 at the same sites 
+  "doe_trace_noy", "doe_trace_no",     "doe_trace_noy-no", "doe_nox", "doe_no"
+  )
+
+doe <- doe0 %>%
+  rename(location_doe=site) %>%
+  
+  filter(
+    #don't need Tacoma site - no collocation here
+    location_doe != "AQSTAC",
+    #don't need these variables
+    !variable %in% drop_doe_vars,
+         ) %>%
+  mutate(
+    date = ymd(substr(time, 1, 10)),
+    #crosswalk for our location IDs
+    location = recode_factor(factor(location_doe),
+                             #10th & Weller
+                             "AQS10W" = "MC0120",
+                             #Beacon Hill
+                             "AQSBH" = "MC0003",
+                             #Kent-Central & James
+                             "AQSK" = "MC0406",
+                             #Duwamish
+                             "AQSD" = "MC0126",
+                             #Tukwila Allentown
+                             "AQSTUK" = "MC0002"
+                             ),
+    #sampling frequency
+    freq = recode_factor(factor(freq),
+                          "DOE_H" = "hour",
+                          "DOE_M" = "minute",
+                          "DOE_D" = "day",
+                          ),
+    freq = factor(freq, levels = c("minute", "hour", "day")),
+    
+    pollutant = ifelse(grepl("_no", variable), "NO2", 
+                            ifelse(grepl("pm25", variable), "PM2.5",
+                                   ifelse(grepl("neph", variable), "Neph",
+                                          ifelse(grepl("_bc_", variable), "BC", NA)
+                                          )
+                            )
+                            ),
+    pollutant = factor(pollutant, levels = c("BC", "NO2", "Neph", "PM2.5"))
+    
+  )  %>%
+  
+  filter(
+    #only keep data for study period
+    date >= ymd(start_date) & date <= ymd(end_date)
+  )
+
+
+#distinct(doe[c("freq", "freq2")])
+
+```
+
+* note, hourly and daily readings should be "validated" by the DOE since the final files were requested > 3 months after the data were collected (how long it takes DOE to validate data.)
+
+```{r}
+
+doe %>%
+  # make code run faster
+  group_by(location_doe, freq, variable, pollutant) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  
+  #filter(!variable %in% drop_doe_vars) %>%
+  mutate(location_doe = substr(location_doe, 4, nchar(location_doe))) %>%
+  
+  ggplot(aes(y=variable, x=location_doe)) + 
+  facet_grid(pollutant~freq, scales="free", space = "free_y") + 
+  geom_bin2d(aes(fill=count)) + 
+  
+  labs(title =  "Available regulatory data")
+
+```
+
+observations    
+* 10W and BH had PM2.5 from different sources over the course of the year 
+
+```{r}
+#check that there is sufficient data in the minute data 
+doe %>%
+  filter(freq == "minute") %>%
+  distinct(location_doe, variable, pollutant, date) %>%
+  
+  filter(!variable %in% drop_doe_vars) %>%
+  
+  ggplot(aes(x=date, y=variable)) + 
+  facet_grid(pollutant~location_doe, scales="free", space = "free_y") + 
+  geom_point(alpha=0.1) + 
+  
+  labs(title = "Available minute data during the study period")
+
+  
+```
+
+* note, most are FEM methods (not nephs; also, not all bam methods are FEM - e.g., doe_bam_pm25?)    
+* there is some overlap in instrument readings. This is probably done on purpose by the PSCAA in order to calibrate readings from different instruments. We will drop instrument reading as soon as another FEM method starts sampling.    
+* BC readings at 10W are missing for ~4 months from around May-Aug 2019
+
+
+
+```{r}
+doe %>%
+  filter(freq == "minute") %>%
+  distinct(location_doe, variable, pollutant, date) %>%
+   
+  filter(
+    #these sites already have full neph data 
+         !(location_doe %in% c('AQSD', 'AQSK', 'AQSTUK') & variable %in% c('doe_bam_pm25', 'doe_pm25_fem', 'doe_pm25_fem_bam', 'doe_pm25_fem_teo') )
+         
+    
+  ) %>%
+  
+  ggplot(aes(x=date, y=variable)) + 
+  facet_grid(pollutant~location_doe, scales="free", space = "free_y") + 
+  geom_point(alpha=0.1) + 
+  
+  labs(title = "Minute data to be used to calculate anual averages")
+
+```
+
+
+```{r, eval=F}
+# when does sampling start/stop or sites with multiple instruments measuring PM2.5?
+doe %>%
+  filter(freq == "minute",
+         location_doe %in% c('AQS10W', 'AQSBH'),
+         pollutant == "PM2.5"
+         ) %>%
+  group_by(location_doe, variable) %>%
+  summarize(
+    start_date = min(date),
+    end_date = max(date)
+  ) %>%
+  arrange(location_doe, start_date)
+
+```
+
+```{r}
+doe2 <- doe %>%
+  filter(
+    # hour/day estimates may be largely aggregates of minute data 
+    freq == "minute",
+    
+    #these sites already have full neph data
+    !(location_doe %in% c('AQSD', 'AQSK', 'AQSTUK') & variable %in% c('doe_bam_pm25', 'doe_pm25_fem', 'doe_pm25_fem_bam', 'doe_pm25_fem_teo') ),
+    
+    # a diff FEM method starts sampling at both 10W and BH at this time
+    !(variable == "doe_pm25_fem" & date > ymd("2019-04-01") ),
+    # a diff ?FEM method starts sampling at BH 
+    !(variable == "doe_pm25_fem_teo" & date > ymd("2019-11-25") & location_doe == 'AQSBH'),
+    
+  )
+
+doe2_w <- doe %>%
+  select(-c(pollutant)) %>%
+  spread(variable, value)
+
+  
+```
+
+* dropped overlapping data at 10W and BH: 
+
+```{r}
+#check that things look right # looks right
+
+## plot
+doe2 %>%
+  distinct(location_doe, variable, pollutant, date) %>%
+  
+  ggplot(aes(x=date, y=variable)) + 
+  facet_grid(pollutant~location_doe, scales="free", space = "free_y") + 
+  geom_point(alpha=0.1) +
+  
+  labs(title = "Data used to estimate annual averages at AQS sites")
+
+
+## table
+doe2 %>%
+  filter(freq == "minute",
+         location_doe %in% c('AQS10W', 'AQSBH'),
+         pollutant == "PM2.5"
+         ) %>%
+  group_by(location_doe, variable) %>%
+  summarize(
+    start_date = min(date),
+    end_date = max(date)
+  ) %>%
+  arrange(location_doe, start_date) %>%
+  kable(caption = "PM2.5 readings used to calculate an annual average at 10W and BH since multiple instruments were used over the course of the ACT TRAP study period") %>%
+  kable_styling()
+```
+
+observations per instrument 
+
+* looks good. We have ~1 reading/minute at each site
+
+```{r}
+doe2 %>%
+  group_by(pollutant, location_doe) %>%
+  summarize(
+    total_samples = n(),
+    #samples_per_hour = total_samples/as.numeric(round(difftime(end_date, start_date, units="hour")))
+    samples_per_hour = total_samples/as.numeric(difftime(max(date), min(date), units="hour"))
+  ) %>%
+  kable(caption = "Number of samples per site and pollutant used to estimate annual averages", digits = 0) %>%
+  kable_styling()
+  
+```
+
+
+```{r}
+# #see unique sampling locations. can use these to download data faster from the results table
+# imports %>% mutate(loc = substr(runname, 12, nchar(runname))) %>% distinct(loc)
+
+#imports %>% mutate(loc = substr(runname, 12, 14)) %>% distinct(loc)
+
+```
+
+```{r}
+
+
+```
+
+# Functions
+
+```{r, colo.plot fn}
+
+# fn returns colocation plot w/ best fit info, RMSE and MSE-based R2
+
+colo.plot <- function(data.wide=mm.wide, 
+                      x.variable, x.label = "",
+                      y.variable, y.label = "",
+                      col.by = "",
+                      shape.var="",
+                      alpha_value = 0.3,
+                      mytitle = "", title_width = 60,
+                      mysubtitle = NULL,
+                      mycaption = NULL,
+                      int_digits = 0,
+                      slope_digits = 2,
+                      r2.digits = 2, 
+                      rmse.digits = 0,
+                      convert_rmse_r2_to_native_scale=F
+                      ) {
+  
+  #if label is left blank, use variable name
+  if(x.label == ""){x.label <- x.variable}
+  if(y.label == ""){y.label <- y.variable}
+  
+  data.wide <- data.wide %>% drop_na(x.variable, y.variable)  
+  
+  lm1 <- lm(formula(paste(y.variable, "~", x.variable)), data = data.wide)
+  #summary(lm1)
+  
+  
+  ################################################
+  ## ?? need this fns inside this fn???
+  #returns MSE
+  mse <- function(obs, pred){
+    mean((obs - pred)^2)
+  }
+  
+  rmse <- function(obs, pred){
+    sqrt(mean((obs - pred)^2))
+  }
+  
+  #returns MSE-based R2
+  r2_mse_based <- function(obs, pred) {
+    mse.est <- mse(obs, pred)
+    r2 <- 1- mse.est/mean((obs - mean(obs))^2)
+    max(0, r2)
+  }  
+  
+  ################################################ 
+  
+  
+  #rmse
+  if (convert_rmse_r2_to_native_scale==T) {
+    rmse <- rmse(obs = exp(data.wide[[x.variable]]), pred = exp(data.wide[[y.variable]])) %>% 
+      round(digits = rmse.digits)
+    
+    r2 <- r2_mse_based(obs = exp(data.wide[[x.variable]]), pred = exp(data.wide[[y.variable]])) %>%
+      round(r2.digits)
+    } 
+  
+  else {
+    rmse <- rmse(obs = data.wide[[x.variable]], pred = data.wide[[y.variable]]) %>% 
+    round(digits = rmse.digits)
+    
+    r2 <- r2_mse_based(obs = data.wide[[x.variable]], pred = data.wide[[y.variable]]) %>%
+      round(r2.digits)
+  }
+  
+  
+  fit.info <- paste0("y = ", round(coef(lm1)[1], int_digits), " + ", round(coef(lm1)[2], slope_digits), 
+                     "x \nMSE-R2 = ", r2,  
+                     "\nRMSE = ", rmse,
+                     "\nNo. Pairs = ", nrow(data.wide))
+  
+  max_plot <- max(max(data.wide[[x.variable]]), max(data.wide[[y.variable]]) )
+  min_plot <- min(min(data.wide[[x.variable]]), min(data.wide[[y.variable]]) )
+    
+  #compare  
+  p <- data.wide %>%
+    ggplot(aes(x= data.wide[[x.variable]], y= data.wide[[y.variable]])) + 
+    geom_point(alpha=alpha_value, aes(col = data.wide[[col.by]],
+                                      shape = data.wide[[shape.var]]
+    )) + 
+    coord_fixed() +
+    geom_abline(intercept = 0, slope = 1) +
+    #geom_smooth(aes(fill="loess")) +
+    geom_smooth(method = "lm", aes(fill="LS")) +
+    xlim(min_plot, max_plot) +
+    ylim(min_plot, max_plot) +
+    labs(title = #wrapper(
+      mytitle, width = title_width
+      #)
+      ,
+         subtitle = mysubtitle,
+         caption = mycaption,
+         x = x.label,
+         y = y.label,
+         col = col.by, 
+      shape = shape.var,
+         fill = "fit") +
+    annotate("text", -Inf, Inf, label = fit.info, hjust = 0, vjust = 1)
+
+  return(p)
+  
+}
+```
+
+```{r, alt_boxplot fn, echo=T}
+#function takes df and returns summary statistics for plotting alternative boxplots with quantiles: 10, 25, 50, 75 and 90. this reduces the plotting of outliers, which are typically problematic when dealign with large datasets. 
+
+alt_boxplot <- function(df, var, min_q=0.025, max_q=0.975){
+  df <- df %>%
+    rename(var = var) %>%
+    
+    #calculate quantiles
+    summarize(
+      Qmin = quantile(var, min_q),
+      Q25 = quantile(var, 0.25),
+      Q50 = quantile(var, 0.50),
+      Q75 = quantile(var, 0.75),
+      Qmax = quantile(var, max_q)
+      )
+  
+  names(df)[names(df)==var] <- var
+  
+  return(df) 
+    
+}
 
 ```
 
 
 # What instruments were used?
 
-- filter to only keep instrument readings of interest
-- ID primary and secondary instruments 
-- table: variable, no_sampling_days, no_samples, start/end_date
-- same as above, but by instrument_id
-
 ```{r}
+#plot 
+dt0 %>%
+  distinct(date, variable, instrument_id) %>%  
+  
+  ggplot(aes(x=date, y=instrument_id, col=variable)) + 
+  geom_point()
 
 ```
 
+```{r}
+#tables
+dt0 %>%
+  distinct(date, variable, #instrument_id
+           ) %>%
+  group_by(variable, #instrument_id
+           ) %>%
+  summarize(
+      sampling_days = n(),
+      start_date = min(date),
+      end_date = max(date)
+    ) %>%
+  add_row(variable="OVERALL MEAN", sampling_days=mean(.$sampling_days)) %>%
+  kable(caption = "Total instrument sampling", 
+        digits = 0
+        ) %>%
+  kable_styling()
 
+```
 
-# Calibrations
+# Quality Assurance 
+
+## Calibrations
 
 * I think the "level" column is what the instrument read, while the conc column is the true concentration during a calibration procedure. 
-* pm25 should be nephelometer readings 
+* pm25 is nephelometer readings 
 
 * **NOTE**: don't use the "analyte" column, which is wrong for some instruments (Amanda confirmed this). Use instrument_id column.
-
-### -->  join calibration table to the results table to get the actual instrument reading
 
 ```{r}
 # NOTE: don't use "analyte" column, which is wrong for some instruments??
 
 calibrations %>%
-  #drop NO and NOx data. not sure why Tim G decided to look at this
-  filter(!analyte %in% c("no, nox")) %>%
   #one record per calibration attempt
-  distinct(runname, analyte, instrument_id, 
-           filename
-           ) %>%  
-
+  distinct(date, instrument_id) %>%  
   #number of times each instrument was calibrated
-  group_by(#analyte, 
-           instrument_id,
-           #filename
-           ) %>%
+  group_by(instrument_id) %>%
   summarize(
     number_of_calibrations = n(),
-    dates = paste(unique(substr(runname, 1,10 )), collapse = ", ")
+    dates = paste(date, collapse = ", ")
   ) %>%
-  kable(title = "Instrument calibrations during the study period") %>%
+  kable(caption = "Number of gas instrument calibrations (incluing nephelometers [PM25]) and particle instrument zero checks during the study period") %>%
   kable_styling()
   
-
-
 ```
 
 
-# Zeroing inf particle intruments
+## Zeroing for particle intruments
+notes   
+* notes field does not clarify exact time when the particle filter was placed/removed from the instruments. You can typically see instrument readigns dip for a period of time before going back up though (e.g., 2019-10-22).
 
-note: this table doesn't actually include the calibration results, just the start/end times
-
-### --> use lab_calibrations table to do this instead 
+observations      
+* The filter may not have been placed correctly/on time on 2019-05-06?
 
 ```{r}
 
@@ -146,53 +703,172 @@ note: this table doesn't actually include the calibration results, just the star
 
 calibrations %>%
   # look at particle instruments
-  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")) ) ) %>%
-  #some instruments had duplicate files in one day
-  distinct(instrument_id, date) %>%
-  group_by(instrument_id) %>%
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
+                    !str_detect(instrument_id, "PM25")
+                    ) %>% 
+  
+  ggplot(aes(x=time, y=value, col=instrument_id, shape=instrument_id)) + 
+  scale_shape_manual(values = c(1:length(unique(calibrations$instrument_id)))) +
+  facet_wrap(~date, scales="free") + 
+  geom_point(alpha=0.5) + 
+  geom_hline(yintercept = 0, linetype="dashed")
+
+  
+  
+# dates
+calibrations %>%
+  # look at particle instruments
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
+                    !str_detect(instrument_id, "PM25")
+                    ) %>%  
+  group_by(date, #instrument_id
+           ) %>%
   summarize(
-    number_of_zeros = n(),
-    dates = paste0(unique(date), collapse = ", ")
-    
+    instruments = paste(unique(instrument_id), collapse = ","),
+    #notes = paste(unique(notes), collapse = "," )
   ) %>%
-  kable(caption = "when zero checks for particle instruments occurred") %>%
+  kable(caption = "zero check dates and instruments. The notes field does not indicate the exact filter placement/removal time from instruments (when instruments should have read '0')") %>%
   kable_styling()
+  
+  
+  
+    # #some instruments had duplicate files in one day
+  # distinct(instrument_id, date) %>% 
+  # group_by(instrument_id) %>%
+  # summarize(
+  #   number_of_zeros = n(),
+  #   dates = paste0(unique(date), collapse = ", ")
+  #   
+  # ) %>%
+  # kable(caption = "when zero checks for particle instruments occurred") %>%
+  # kable_styling()
 
 ```
 
 
-# See extreme instrument readings 
 
--very high vs low (e.g., pt<300; MOVUP dropped readings >27k ng/m3 - in top 1% data)
---histograms of natural break points?
--- compare against other types of instruments as well? 
-- BC: check that attenuation < 50% (_atn1). Instruments are most sensitive at detecting changes below this threshold
--drop bad readings (? < 300 pt? what about other instruments??)
---note what % is dropped
--compare raw collocated instrument readings (do some instrument perform poorly?)
--save "clean" raw stop dataset
+
+
+
+
 
 ```{r}
-
-
-
+# Instrument Time Trends w/ All Data
 
 ```
-
-
-# Check some time series plots to make sure there were no obvious issues
-
-- e.g., no2 readings decreased over the course of the day? 
 
 ```{r}
+### --> delete here and only do at  2-min level?
+### --> see manuals?
+```
+
+
+notes   
+* see how values change as a sampling day goes on (e.g., see NO2 isues?)
+* plotting hours as a continous variable   
+* note: this is only using stop data 
+
+observations       
+* see some instrument sensitivity over time (e.g., CO2 sensitiviy early on)?
+* changes over time could occur b/c: a) different sites; b) changing AP levels; c) instrument issues   
+* backup instruments typically have a lot less data (so more variable)
+
+
+```{r, fig.height=12, eval=F}
+
+p <- list()
+
+#give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
+
+for(i in seq_along(ap)) {
+  #i=1
+  
+  p[[i]] <- dt0 %>%
+    
+    filter(variable == ap[i],
+           #location != "MS0000"
+           ) %>%
+    
+    group_by(instrument_id, runname) %>%
+    #calculate time since start of run
+    mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
+    
+    #drop roosevelt after use it ot calculate start time
+    filter(location != "MS0000") %>%
+    
+    ggplot(aes(x=time, y=value, col=instrument_id, 
+               linetype=primary_instrument
+               )) +
+    geom_smooth() +
+    facet_wrap(~variable, scales="free") +
+    
+    # theme(legend.justification=c(0,0), legend.position=c(0,0),
+    #       #legend.key = element_blank(), #legend.key.size = 1
+    #       ) +
+     
+    labs(x= "hours since departing Roosevelt garage",
+         col="",
+         linetype = ""
+         )  
+  
+  p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
 
 ```
 
-# Check fieldnotes and instrument warnings 
+same as above but by stop order number (note, some routes may take a while to get to first stop, e.g., route 8)
 
--e.g., alcohol wick issues 
 
-### --> how were makeup route runnames labeled?
+
+```{r, fig.height=12, eval=F}
+### --> error: plots r empty 
+
+ 
+#plot with all the data
+p0 <- dt0 %>%
+    ggplot(aes(x=location, y=value, col=instrument_id, 
+               linetype=primary_instrument
+               )) +
+   geom_boxplot() + 
+  #geom_smooth() +
+    facet_wrap(~variable, scales="free") +
+    
+    #theme(legend.justification=c(0,0), legend.position=c(0,0)) +
+    
+    labs(x= "stop order number within a run",
+         col="",
+         linetype = ""
+         )
+
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+  
+  #only plot a subset of the data
+  p[[i]] <- p0 %+% subset(dt0, variable == ap[i])
+
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+
+ 
+
+
+# Fieldnotes and instrument warnings 
+notes    
+* see QAQC.html doc that Amanda and Kaya have worked on 
+  * most instrument error codes don't have "use" indicators to clarify whether that data should be used or not though (as of 5/11/21)     
+
+*e.g., alcohol wick issues 
 
 ```{r}
 fieldnotes2 <- fieldnotes %>%
@@ -204,17 +880,509 @@ fieldnotes2 <- fieldnotes %>%
   )
 
 
+```
+
+
+
+# Drop bad raw values (e.g., low)
+
+-very high vs low (e.g., pt<300; MOVUP dropped readings >27k ng/m3 - in top 1% data)
+-- compare against other types of instruments as well? 
+- BC: check that attenuation < 50% (_atn1). Instruments are most sensitive at detecting changes below this threshold
+-drop bad readings ( < 300 pt [what MOVUP did]? what about other instruments??)
+--note what % is dropped
+
+* dropping UFP readings < 300 pt/cm3, which are very  unlikely
+
+```{r}
+low_pt_val <- 300
+
+dt <- dt0 %>%
+  filter(
+    #drop particle readings of 0 since these are often associated w/ alcohol wick issues
+    !(grepl("PM", instrument_id) & !grepl("PM25", instrument_id)  & value == low_pt_val)
+   )  
+  
+```
+
+proportion of data dropped
+
+```{r}
+(nrow(dt0) - nrow(dt))/nrow(dt0) # ~0.04%
 
 ```
 
 
-# Calculate site medians
 
+# Summary of Raw Data Values
+
+```{r,}
+dt0 %>%
+  #drop Roosevelt Garage
+  filter(location != "MS0000") %>%
+  
+  group_by(instrument_id) %>%
+  summarize(
+    no_readings = n(),
+    Min = min(value),
+    # q01 = quantile(value, 0.01),
+    Q02.5 = quantile(value, 0.025),
+    Q25 = quantile(value, 0.25),
+    Q50 = quantile(value, 0.50),
+    Q75 = quantile(value, 0.75),
+    Q97.5 = quantile(value, 0.975),
+    # q99 = quantile(value, 0.99),
+    Max = max(value),
+  ) %>%
+  # scientific notation w/ few sigfigs 
+  mutate_at( vars(-no_readings), ~format(., scientific=T, digits = 3) ) %>%
+  
+  kable(caption="raw instrument readings",
+        ) %>%
+  kable_styling()
+
+```
+
+
+
+
+# Calculate Site medians
+
+ 
 - don't include lab data here? 
 
--save "clean" stop medians dataset 
+```{r}
+#note: on rare instantces when duplicate instruments were on board, all the data are used to calculate a median
+dt_stops <- dt %>%
+  filter(location != "MS0000") %>%
+  #calculate arrival time at any stop
+  group_by(date, location) %>%
+  mutate(time = min(time)) %>%  
+  
+   group_by(date, time, location, site, instrument_id, variable, primary_instrument) %>%
+  summarize(
+    #mean_value = mean(value),
+    median_value = median(value)
+  )
+
+```
+
+# Summary of data 
+
+## --> update code to use 2-min data 
+
+
+notes    
+* boxplots are not traditinal. they show specific quantiles 
+
+
+## Instrument comparisons 
+
+### --> ? if diff instruments show similar results, should just use all of the data w/o calibrating? do we drop "poor" performing instrments (e.g, NS 3?)
+
+observations   
+* many/most instruments have extreme values
+
+```{r, fig.height=12}
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt0 %>%
+  #drop Roosevelt Garage
+  filter(location != "MS0000",
+         variable== ap[i]
+         ) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=instrument_id, #col=instrument_id, 
+               linetype=primary_instrument),) + 
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
+    
+    facet_wrap(~variable, scales="free") +
+    
+    labs(linetype="Instrument", col="ID")
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+
+
+
+* labels are for the min/max reading of each instrument 
+
+```{r, fig.height=12, eval=F}
+ 
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  df <- dt0 %>%
+    #drop Roosevelt Garage
+    filter(location != "MS0000",
+           variable== ap[i]) #%>% 
+  ##example - look at a subset of data. for initial plotting
+    #filter(sample(c(TRUE, FALSE), size = nrow(.), prob = c(0.1, 0.9), replace = T))
+    
+  #summary table for labels
+  df_sum <- df %>%
+    # add min/max labels
+    group_by(primary_instrument, instrument_id) %>%
+    summarize(
+      min = min(value),
+      max=max(value)
+      )  %>%
+    #make long format to avoid overlapping labels later
+    gather(kind, value, min,max)
+    
+  p[[i]] <- df %>% 
+    
+    ggplot(aes(x=value, col=instrument_id, linetype=primary_instrument),) + 
+    geom_density() + 
+    facet_wrap(~variable, scales="free") +
+    
+    geom_text_repel(data=df_sum, aes(x=value, y=0, label=value), show.legend = F ) +
+     
+    #theme(legend.justification=c(1,1), legend.position=c(1,1)) + 
+    #don't show linetype in legend 
+    guides(linetype = FALSE)
+   
+    # don't do since we have values <=0 
+    #scale_x_log10()
+  
+  p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, 
+          ncol = 2, nrow = 4
+          )
+
+
+
+```
+
+
+## Temporal Trends 
+
+notes   
+* note, plotting non-extreme values, otherwise can't see any trends in the plots    
+  - if on log scale, some values are dropped (e.g., many for BC since aethalometer instrument is noisy) 
 
 ```{r}
+#high_q <- 0.99
+```
+
+by month 
+
+```{r, fig.height=12}
+# by month
+
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt0 %>%
+    
+    filter(variable== ap[i],
+           ##don't plot extremes
+           #value <= quantile(value, high_q),
+           location != "MS0000",
+           ) %>%
+    
+    mutate(
+    month = factor(month(time, label = T))
+    ) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument, month) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=month,
+               col=instrument_id, linetype=primary_instrument
+               )) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
+                 stat = "identity",
+               ) + 
+
+    # # what is group=1?
+    stat_summary(aes(y=Q50,
+                 group=instrument_id,    #group=1,
+                     ), 
+                 fun="mean", geom="line") +
+    
+  facet_wrap(~variable, scales="free") +
+    
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    #scale_y_log10() +
+    
+    labs(y= "value",
+         col="ID",
+         linetype = "Instrument"
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+by weekday
+
+```{r, fig.height=12}
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt0 %>%
+    
+    filter(variable== ap[i],
+           location != "MS0000",
+           ) %>%
+    mutate(
+      weekday = weekdays(time, abbreviate = T),
+      weekday = factor(weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+    ) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument, weekday) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=weekday,
+               col=instrument_id, linetype=primary_instrument
+               )) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
+                 stat = "identity",
+               ) + 
+
+    # # what is group=1?
+    stat_summary(aes(y=Q50,
+                 group=instrument_id,    #group=1,
+                     ), 
+                 fun="mean", geom="line") +
+    
+  facet_wrap(~variable, scales="free") +
+    
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    #scale_y_log10() +
+    
+    labs(y= "value",
+         col="ID",
+         linetype = "Instrument"
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+by hour 
+
+```{r}
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt0 %>%
+    
+    filter(variable== ap[i],
+           location != "MS0000",
+           ) %>%
+    mutate(hour = factor(hour(time))) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument, hour) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=hour,
+               col=instrument_id, 
+               linetype=primary_instrument
+               )) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
+                 stat = "identity",
+               ) + 
+
+    # # what is group=1?
+    stat_summary(aes(y=Q50,
+                 group=instrument_id,    #group=1,
+                     ), 
+                 fun="mean", geom="line") +
+    
+  facet_wrap(~variable, scales="free") +
+    
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    #scale_y_log10() +
+    
+    labs(y= "value",
+         col="ID",
+         linetype = "Instrument"
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+```
+
+
+ 
+## Spatial trends
+
+```{r, fig.height=18, eval=F}
+#hard to see any patterns b/c too much data & site are not organized. some sites inevitable left out b/c of missing route when site "order numbering" is done
+
+p <- list()
+    
+for(i in seq_along(ap)) {
+  #r=1
+  for(r in seq_along(unique_routes)) {
+    #i=1
+  
+    #only plot a subset of the data
+    p[[i]] <- dt0 %>%
+  
+      filter(
+         variable== ap[i],
+         location != "MS0000",
+         site == unique_routes[r]
+             ) %>%
+      #calc stats for alternative boxplots
+      group_by(site, location, #run_stop_no, 
+               variable) %>%
+      alt_boxplot(var = "value") %>%  #View()
+       
+      #plotting issue when use run_stop_no. might be b/c of NAs  
+      ungroup() %>%
+      # drop_na(run_stop_no) %>%
+      # mutate(#run_stop_no = as.factor(run_stop_no)
+      #        run_stop_no = paste0(run_stop_no, "_", location)
+      #        ) %>%
+      
+      ggplot(aes(y= location, 
+               #y= run_stop_no, 
+                 )) +
+  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax,
+                   ), 
+                   stat = "identity", 
+                 ) +     
+      facet_grid(site~variable, scales="free") + #site
+      labs(y= "Stop No.",
+           col="",
+           linetype = ""
+           )  
+   #p[[i]] 
+   
+  }
+  #plot each route separately
+  print(ggarrange(plotlist =  p, ncol = 2, nrow = 4))
+}
+
+
+```
+
+
+
+* selected some low, medium and high var sites (n~15 each), but can't see any patterns. There may be too many outliers/data?
+
+```{r, fig.height=12}
+
+
+#by site 
+p <- list()
+
+#sample a few sites w/ low, medium and high variability
+loc_sample <- dt0 %>%
+  filter(location != "MS0000") %>%
+  group_by(location) %>%
+  mutate(sd = sd(value)) %>%
+  ungroup() %>%
+  mutate(
+    sd_lvl = ifelse(sd >= quantile(sd, 0.66), "high",
+                      ifelse(sd < quantile(sd, 0.66) & sd >= quantile(sd, 0.33), "medium",
+                                                               "low")
+                      )
+    ) %>% 
+  #one row per site
+  distinct(location, sd_lvl) %>%
+  #take random sample from each SD level
+  group_by(sd_lvl) %>%
+  sample_n(15)  
+    
+
+#loc_sample <- sample(unique(dt0$location), size = 50, replace = F)
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt0 %>%
+
+    filter(
+       variable== ap[i]
+           ) %>%
+    
+    #only keep sample of sites
+    right_join(loc_sample) %>% 
+    
+    #calc stats for alternative boxplots
+      group_by(location, variable, instrument_id) %>%
+      alt_boxplot(var = "value") %>%  
+      
+      ggplot(aes(y= location, col=instrument_id)) +
+  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), 
+                   stat = "identity", 
+                 ) +     
+    
+    facet_grid(~variable, scales="free") + #site
+    labs( 
+         col="",
+         linetype = ""
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
 
 ```
 
@@ -222,17 +1390,496 @@ fieldnotes2 <- fieldnotes %>%
 
 # Compare collocated instruments 
 
-### --> pull lab/garage collocation data from results table (see locations: LABC, RM114, WILCOXAMB that are not necessarily collocation times)
-
-- don't include lab collocations here? 
-
-- plot with: best fit line, MSE-based R2, RMSE, no pairs; color-coded by route?
+### ---> calculate R2, RMSE between these; also mean or range of diff? 
 
 ```{r}
-# lab_calibrations 
 
 ```
 
+
+### --> pull lab/garage collocation data from results table (see locations: LABC, RM114, WILCOXAMB that are not necessarily collocation times)
+
+- don't include lab collocations here? 
+- is there a NanoScan clock issue still?
+
+
+
+
+```{r}
+dt_stops_wide <- dt_stops %>%
+  select(-primary_instrument) %>%
+  spread(instrument_id, median_value)
+
+# dt_wide <- dt %>%
+#   spread(instrument_id, value) 
+  
+```
+
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "BC_0066", y.variable = "BC_0063", col.by = "site", 
+            slope_digits = 2) + 
+  labs(col="Route")
+
+```
+
+* poor CO2 fit 
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "CO2_14", y.variable = "CO2_19", col.by = "site"
+            ) + 
+  labs(col="Route")
+
+```
+
+* poor NO2 fit. NO2_1 had issues?    
+* which instrument do we trust?   
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "NO2_2", y.variable = "NO2_1", col.by = "site", 
+            slope_digits = 0, int_digits = 2) + 
+  labs(col="Route")
+  
+```
+
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "PM25_176", y.variable = "PM25_205", col.by = "site", int_digits = 6, rmse.digits = 6) + 
+  labs(col="Route")
+
+```
+
+* PMDISC_8 has some low readings. 
+
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "PMDISC_3", y.variable = "PMDISC_8", col.by = "site") + 
+  labs(col="Route")
+
+```
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93", col.by = "site") + 
+  labs(col="Route")
+
+```
+
+* only these 2 screened PTRAKS were collocated.
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "PMPTSCREEN_94", y.variable = "PMPTSCREEN_3", col.by = "site") + 
+  labs(col="Route")
+
+```
+
+* PMSCAN 3 has poor readings 
+
+### --> drop SCAN 3?
+
+
+```{r}
+dt_stops_wide %>%
+  colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", col.by = "site") + 
+  labs(col="Route")
+
+```
+
+## Collocation time series
+
+*see if duplicate instruments behave differenlty over time when in exact same place 
+
+* still see some trends related to how long instruments are run (is this real?)   
+* co2, no2, nanoscan instruments seem to behave slightly differently when collocated 
+
+```{r}
+
+colo <- data.frame()
+
+for (i in seq_along(instruments)) {
+  #i=1
+  
+  colo0 <- dt_stops_wide %>%
+    #these were never collocated w/ the others
+    select(-PMPTSCREEN_2, -PMPTSCREEN_93) %>% 
+    
+    select(date, time, location, site, variable, contains(paste0(instruments[i], "_" ))) %>%
+    drop_na() %>%
+    gather("instrument_id", "median_value", contains(instruments[i])) 
+  
+  if(i==1) {
+    colo <- colo0
+    } else
+      colo <- rbind(colo, colo0)  
+  
+}
+  
+colo <- colo %>%
+    mutate(
+      primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+      primary_instrument = factor(primary_instrument, levels = c("Primary", "Backup"))
+    )
+
+#unique(colo$instrument_id)
+
+```
+
+```{r, fig.height=12}
+p <- list()
+
+#give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
+
+for(i in seq_along(ap)) {
+  #i=1
+  
+  p[[i]] <- colo %>%
+    
+    filter(variable == ap[i]) %>%
+    
+    group_by(instrument_id, date) %>%
+    #calculate time since start of run
+    mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
+    
+    ggplot(aes(x=time, y=median_value, col=instrument_id, linetype=primary_instrument)) +
+    facet_wrap(~variable, scales="free") +
+    geom_smooth() +
+    
+    labs(x= "hours since departing Roosevelt garage",
+         col="",
+         linetype=""
+         )  
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+```
+
+
+# AQS sites 
+
+Looking at the ACT TRAP field protocol, it looks like BC, NO2 and neph (also neph PM2.5) values are collected every minute, though these are not officially validated like the hourly data are. We will use these instead of hourly data since we want to compare these readings to our 2-minute collocations.
+
+Note that BH and 10W don’t have minute data. BH has rolling 1-hour averages every 6 minutes for PM2.5 (teoms), while 10W seems to report the same thing every minute for about an hour (~58 min). 
+
+We will have to use a mix of semi-hourly PM2.5 data and hourly data for BH and 10W since data comes from various non-minute-level sources.
+
+
+-see if our campaign measurements were similar to those from AQS sites. Compare AQS:
+  - 2-min avgs
+  - 2-min annual avg
+  - full data annual avg
+
+```{r}
+#calculate annual averages
+doe_annual <- doe2 %>%
+  group_by(location_doe, location, pollutant) %>%
+  summarize(
+    annual_avg = mean(value)
+  )
+
+```
+
+### --> edit code to compare estimates at the 2-min level? e.g. could have issues merging basd on time stamp to the second
+
+```{r}
+# dt0_temp <- dt0 %>%
+#   filter(variable %in% c("ma200Pirbc1", "neph_bscat", "no2")) %>%
+#   select(-variable) %>%
+#   
+#   #group by everything except the value. not sure why these rows have diff readings for the same time, by the same instrument. could be an instrument error?
+#   #slice(1031986, 1031987, 125672, 125673, 717090, 717091) %>% View()
+#   # 2019-12-07 07:45:25	
+#   group_by_at(vars(-value)) %>%
+#   summarize(value = mean(value)) %>% View()
+#   
+#   
+#   
+#   spread(instrument_id, value)
+# 
+# test <- doe2 %>%
+#   rename(doe_value = value,
+#          
+#          )
+  
+#dt_doe <- left_join(dt0_w, doe2_w)
+dt_doe <- dt0 %>%
+  filter(variable %in% c("ma200_ir_bc1", "neph_bscat", "no2"),
+         ) %>%
+  select(-c(variable, primary_instrument)) %>%
+  spread(instrument_id, value) %>%
+  arrange(time) %>%
+   
+  left_join(doe2_w) %>%
+  #drop data not collected at AQS sites
+  drop_na(location_doe)
+
+```
+
+```{r, eval=F}
+#table of collocation times ??? Hard to ID exact times b/c diff instruments used at diff locations
+
+dt_doe %>%
+  group_by(location_doe, )
+
+```
+
+
+```{r}
+#BC 
+p <- list()
+
+#doe sites that have bc data
+loc <- doe2 %>%
+  filter(variable == "doe_bc_633") %>%
+  distinct(location_doe) %>% pull()
+
+for (i in seq_along(locs)) {
+  #i=1
+
+  p[[i]] <- dt_doe %>%
+    #one site at a time
+    filter(location_doe == loc[i]) %>%
+    
+    gather("instrument_id", "mobile_monitoring_ma200_ir_bc1", #matches("BC_00|NO2_1|NO2_2|PM25_176|PM25_205")
+           matches("BC_00")
+           ) %>% #View()
+    #gather("doe_no2", "doe_value", matches("doe_no2")) 
+    
+    #put ng/m3 in ug/m3 units like DOE data 
+    mutate(mobile_monitoring_ma200_ir_bc1 = mobile_monitoring_ma200_ir_bc1/1000) %>%
+    
+    colo.plot(x.variable = "doe_bc_633", y.variable = "mobile_monitoring_ma200_ir_bc1", 
+              col.by = "location_doe", shape.var = "instrument_id", 
+              int_digits = 2, r2.digits = 2, rmse.digits = 2#, 
+              #mytitle = "BC readings (ug/m3)"
+              )  
+  
+}
+
+ggarrange(plotlist = p, ncol = 2, nrow=2) %>% 
+  annotate_figure(top = "BC (ug/m3) collocation readings")
+
+```
+
+```{r}
+#no2
+
+p <- list()
+
+#10W site
+p[[1]] <- dt_doe %>%
+  gather("instrument_id", "NO2",  
+         matches("NO2_1|NO2_2")
+         ) %>% 
+  colo.plot(x.variable = "doe_no2", y.variable = "NO2", col.by = "location_doe", shape.var = "instrument_id", int_digits = 2, r2.digits = 2, rmse.digits = 2) + facet_wrap(~location_doe)
+  
+#BH site
+p[[2]] <- dt_doe %>%
+  gather("instrument_id", "NO2",  
+         matches("NO2_1|NO2_2")
+         ) %>% 
+  colo.plot(x.variable = "doe_no2_caps", y.variable = "NO2", col.by = "location_doe", shape.var = "instrument_id", int_digits = 2, r2.digits = 2, rmse.digits = 2)  
+
+ggarrange(plotlist = p) %>% 
+  annotate_figure(top = "NO2 (ppb) collocation readings")
+
+```
+
+* nephelometer collocations look good. This will justify our use of the ST model neph-PM2.5 calibration model (which uses AQS sites in the region) to adjust our readings
+
+```{r}
+# nephs
+
+p <- list()
+
+#doe sites that have neph data
+loc <- doe2 %>%
+  filter(variable == "doe_neph") %>%
+  distinct(location_doe) %>% pull()
+
+for (i in seq_along(locs)) {
+  #i=1
+
+  p[[i]] <- dt_doe %>%
+    #one site at a time
+    filter(location_doe == loc[i]) %>%
+    
+    gather("instrument_id", "mobile_monitoring_neph_bscat", matches("PM25_176|PM25_205")
+           ) %>% #View()
+
+    # #put ng/m3 in ug/m3 units like DOE data. our original units must be: bsp/m
+     mutate(mobile_monitoring_neph_bscat = mobile_monitoring_neph_bscat*(10^4)) %>%
+    
+    colo.plot(x.variable = "doe_neph", y.variable = "mobile_monitoring_neph_bscat", 
+              col.by = "location_doe", shape.var = "instrument_id", 
+              int_digits = 2, r2.digits = 2, rmse.digits = 2 
+              )  
+  
+}
+
+ggarrange(plotlist = p) %>% 
+  annotate_figure(top = "Neph (bsp x10^4/m) collocation readings")
+
+
+```
+
+10W and BH don't have neph readings, but they have PM2.5. These should be correlated w/ our neph readings
+
+```{r}
+
+# PM2.5
+p <- list()
+
+#doe sites that have PM2.5 (non-neph) data
+loc <- doe2 %>%
+  filter(grepl("_pm25", variable)) %>%
+  distinct(location_doe) %>% pull()
+
+for (i in seq_along(locs)) {
+  #i=1
+
+  p[[i]] <- dt_doe %>%
+    #one site at a time
+    filter(location_doe == loc[i]) %>%
+    
+    gather("instrument_id", "mobile_monitoring_neph_bscat", matches("PM25_176|PM25_205")) %>%
+    gather("deo_pm25", "doe_pm25_val", matches("_pm25")) %>% View()
+    
+
+    # #put ng/m3 in ug/m3 units like DOE data. our original units must be: bsp/m
+     #mutate(mobile_monitoring_neph_bscat = mobile_monitoring_neph_bscat*(10^4)) %>%
+    
+    colo.plot(x.variable = "doe_neph", y.variable = "mobile_monitoring_neph_bscat", 
+              col.by = "location_doe", shape.var = "instrument_id", 
+              int_digits = 2, r2.digits = 2, rmse.digits = 2 
+              )  
+  
+}
+
+ggarrange(plotlist = p) %>% 
+  annotate_figure(top = "Neph (bsp x10^4/m) collocation readings")
+
+
+
+
+```
+
+
+
+## Calibrate neph readings
+
+- if our neph readings are similar to the readings from AQS sites (near 1-1 line), we'll use Cooper's calibration curve to estimate PM2.5 mass concentration from bscat. Alternatively, we can create a new calibration based on the PM2.5 readings at the AQS sites we visited during our campaign (?).
+
+
+```{r}
+
+```
+
+
+# Instrument Time trends (site-level)
+
+### --> issue: why do plots show time since departing roosevelt  as > 8 hrs??
+
+* see how values change as a sampling day goes on 
+
+- see some instrument sensitivity over time (e.g., CO2 sensitiviy early on)?
+
+```{r, fig.height=12}
+
+p <- list()
+
+#give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
+
+for(i in seq_along(ap)) {
+  #i=1
+  
+  p[[i]] <- dt_stops %>%
+    
+    filter(variable == ap[i]) %>%
+    
+    group_by(instrument_id, date) %>%
+    #calculate time since start of run
+    mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
+    
+    ggplot(aes(x=time, y=median_value, col=instrument_id,
+               linetype=primary_instrument
+               )) +
+    geom_smooth() +
+    facet_wrap(~variable, scales="free") +
+    
+    labs(x= "hours since departing Roosevelt garage",
+         col="",
+         linetype = ""
+         )  
+  
+  }
+
+ggarrange(plotlist =  p, ncol=2, nrow=4)
+
+```
+
+
+same as above but by stop order number
+
+```{r, fig.height=12, eval=F}
+#sequence of stop order each day
+dt_stops <- dt_stops %>%
+  group_by(date, instrument_id) %>%
+  mutate(run_stop_no = row_number() )
+  
+#plot with all the data
+p0 <- dt_stops %>%
+    ggplot(aes(x=run_stop_no, y=median_value, col=instrument_id,
+               linetype=primary_instrument
+               )) +
+   #geom_boxplot() + 
+  geom_smooth() +
+    facet_wrap(~variable, scales="free") +
+    
+    labs(x= "stop order number within a run",
+         col="",
+         linetype=""
+         )
+
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+  
+  #only plot a subset of the data
+  p[[i]] <- p0 %+% subset(dt_stops, variable == ap[i])
+
+  }
+
+ggarrange(plotlist =  p, ncol=2, nrow=4)
+
+
+```
+
+
+## Instrument trends at overnight collocation
+
+-see same drift issues over time?   
+- what instruments were placed overnight at AQS sites? just some?    
+- were different sampling protocols used at AQS sites (e.g., 15 min every 2 hrs)   
+
+```{r}
+
+
+
+```
+
+
+
+### --> ? select what intruments to keep? 
 
 
 # ? Calibrate instrument readings to the mean
@@ -247,5 +1894,18 @@ fieldnotes2 <- fieldnotes %>%
 
 
 
+
+
+
+# Save final datasets
+
+```{r}
+# raw second data
+#saveRDS(dt, file.path("Output", "clean_raw_data.rda"))
+
+
+# stop-level data 
+
+```
 
 
