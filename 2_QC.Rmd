@@ -497,7 +497,27 @@ doe2 %>%
 
 ```
 
+## Instrument ranges
+
+### --> what does it mean for instrument readings to be outside the measurement range? OK when we average but untrustworthy before? do we drop these or windsorize them?
+
+```{r}
+instrument_range <- dt0 %>%
+  distinct(variable) %>%
+  mutate(
+    Min = c(0, 0, 0, 10^3, 0, 10^2, 0, 0),
+    #no max for neph
+    Max = c(5e3, 2e3, 5e5, 10^6,NA, 10^6, 10^6, 5e5),
+    Units = c("ppm", "ppb", "pt/cm3", "pt/cm3", "bscat/m", "pt/cm3", "ng/m3", "pt/cm3")
+    
+  )
+  
+```
+
+
+
 # Functions
+
 
 ```{r, colo.plot fn}
 
@@ -606,6 +626,8 @@ colo.plot <- function(data.wide=mm.wide,
 }
 ```
 
+* function for a standard boxplot with different whisker definitions to avoid plotting extreme/outlier points
+
 ```{r, alt_boxplot fn, echo=T}
 #function takes df and returns summary statistics for plotting alternative boxplots with quantiles: 10, 25, 50, 75 and 90. this reduces the plotting of outliers, which are typically problematic when dealign with large datasets. 
 
@@ -627,6 +649,26 @@ alt_boxplot <- function(df, var, min_q=0.025, max_q=0.975){
   return(df) 
     
 }
+
+```
+
+```{r, mse r2, rmse}
+#returns MSE
+mse <- function(obs, pred){
+  mean((obs - pred)^2)
+  }
+
+rmse <- function(obs, pred){
+  sqrt(mean((obs - pred)^2))
+  }
+
+
+#returns MSE-based R2
+r2_mse_based <- function(obs, pred) {
+  mse.est <- mse(obs, pred)
+  r2 <- 1- mse.est/mean((obs - mean(obs))^2)
+  max(0, r2)
+  }  
 
 ```
 
@@ -695,6 +737,9 @@ notes
 * notes field does not clarify exact time when the particle filter was placed/removed from the instruments. You can typically see instrument readigns dip for a period of time before going back up though (e.g., 2019-10-22).
 
 observations      
+
+### --> see 5/6 notes 
+
 * The filter may not have been placed correctly/on time on 2019-05-06?
 
 ```{r}
@@ -864,6 +909,9 @@ ggarrange(plotlist =  p, ncol = 2, nrow = 4)
 
 
 # Fieldnotes and instrument warnings 
+
+### -> have Kaya code these and ID things that need attention? how to do this efficiently?
+
 notes    
 * see QAQC.html doc that Amanda and Kaya have worked on 
   * most instrument error codes don't have "use" indicators to clarify whether that data should be used or not though (as of 5/11/21)     
@@ -884,13 +932,179 @@ fieldnotes2 <- fieldnotes %>%
 
 
 
-# Drop bad raw values (e.g., low)
+# Summary of all data before dropping anything
+
+* note, some instruments have very high, abnormal readings
+  - e.g., neph 176
+
+```{r}
+#density plots 
+
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  df <- dt0 %>%
+    #drop Roosevelt Garage
+    filter(location != "MS0000",
+           variable== ap[i]) #%>% 
+  ##example - look at a subset of data. for initial plotting
+    #filter(sample(c(TRUE, FALSE), size = nrow(.), prob = c(0.1, 0.9), replace = T))
+    
+  #summary table for labels
+  df_sum <- df %>%
+    # add min/max labels
+    group_by(primary_instrument, instrument_id) %>%
+    summarize(
+      min = min(value),
+      max=max(value)
+      )  %>%
+    #make long format to avoid overlapping labels later
+    gather(kind, value, min,max)
+    
+  p[[i]] <- df %>% 
+    
+    ggplot(aes(x=value, col=instrument_id, linetype=primary_instrument),) + 
+    geom_density() + 
+    facet_wrap(~variable, scales="free") +
+    
+    geom_text_repel(data=df_sum, aes(x=value, y=0, label=value), show.legend = F ) +
+     
+    #theme(legend.justification=c(1,1), legend.position=c(1,1)) + 
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    labs(title = "raw instrument readings with min/max annotated",
+         linetype = "Instrument",
+         col = "ID"
+         )
+   
+    
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+```
+
+```{r}
+
+dt0 %>%
+  #drop Roosevelt Garage
+  filter(location != "MS0000") %>%
+  
+  group_by(#instrument_id,
+           variable
+           ) %>%
+  summarize(
+    no_readings = n(),
+    Min = min(value),
+    # q01 = quantile(value, 0.01),
+    #Q02.5 = quantile(value, 0.025),
+    #Q25 = quantile(value, 0.25),
+    #Q50 = quantile(value, 0.50),
+    #Q75 = quantile(value, 0.75),
+    #Q97.5 = quantile(value, 0.975),
+    # q99 = quantile(value, 0.99),
+    Max = max(value),
+  ) %>%
+  # # scientific notation w/ few sigfigs 
+  # mutate_at( vars(-no_readings), ~format(., scientific=T, digits = 3) ) %>%
+  
+  kable(caption="raw instrument readings",
+        ) %>%
+  kable_styling()
+
+```
+
+```{r, eval=F}
+
+# * note: density plots w/o pollutant max values included still have many extreme values
+# 
+# * when lowest and highest quantiles are dropped, distributions are less skewed
+
+#density plots 
+
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  df <- dt0 %>%
+    #drop Roosevelt Garage
+    filter(location != "MS0000",
+           variable== ap[i],
+           ) %>% 
+    filter(
+      #value < max(value)
+      value > quantile(value, 0.01),
+      value < quantile(value, 0.99)
+    )
+  ##example - look at a subset of data. for initial plotting
+    #filter(sample(c(TRUE, FALSE), size = nrow(.), prob = c(0.1, 0.9), replace = T))
+    
+  #summary table for labels
+  df_sum <- df %>%
+    # add min/max labels
+    group_by(primary_instrument, instrument_id) %>%
+    summarize(
+      min = min(value),
+      max=max(value)
+      )  %>%
+    #make long format to avoid overlapping labels later
+    gather(kind, value, min,max)
+    
+  p[[i]] <- df %>% 
+    
+    ggplot(aes(x=value, col=instrument_id, linetype=primary_instrument),) + 
+    geom_density() + 
+    facet_wrap(~variable, scales="free") +
+    
+    geom_text_repel(data=df_sum, aes(x=value, y=0, label=value), show.legend = F ) +
+     
+    #theme(legend.justification=c(1,1), legend.position=c(1,1)) + 
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    labs(title = "instrument readings w/o max values",
+         linetype = "Instrument",
+         col = "ID"
+         )
+   
+    
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+
+
+
+
+
+
+# Drop bad data 
+
+### --> do this at 2-mi level? 
+
+## extreme values (e.g., low)
 
 -very high vs low (e.g., pt<300; MOVUP dropped readings >27k ng/m3 - in top 1% data)
 -- compare against other types of instruments as well? 
 - BC: check that attenuation < 50% (_atn1). Instruments are most sensitive at detecting changes below this threshold
 -drop bad readings ( < 300 pt [what MOVUP did]? what about other instruments??)
 --note what % is dropped
+
 
 * dropping UFP readings < 300 pt/cm3, which are very  unlikely
 
@@ -899,8 +1113,8 @@ low_pt_val <- 300
 
 dt <- dt0 %>%
   filter(
-    #drop particle readings of 0 since these are often associated w/ alcohol wick issues
-    !(grepl("PM", instrument_id) & !grepl("PM25", instrument_id)  & value == low_pt_val)
+    #drop particle readings of 0 since these are often associated w/ alcohol wick issues (not inlcuding neph)
+    !(grepl("PM", instrument_id) & !grepl("PM25", instrument_id)  & value <= low_pt_val)
    )  
   
 ```
@@ -912,6 +1126,13 @@ proportion of data dropped
 
 ```
 
+## other
+
+### --> was discmini 8 dropped on route 7 (see notes)
+
+```{r}
+
+```
 
 
 # Summary of Raw Data Values
@@ -962,28 +1183,24 @@ dt_stops <- dt %>%
    group_by(date, time, location, site, instrument_id, variable, primary_instrument) %>%
   summarize(
     #mean_value = mean(value),
-    median_value = median(value)
-  )
+    value = median(value)
+  ) %>%
+  ungroup()
 
 ```
+
 
 # Summary of data 
 
 ## --> update code to use 2-min data 
+### --> ? if diff instruments show similar results, should just use all of the data w/o calibrating? do we drop "poor" performing instrments (e.g, NS 3?)
 
 
 notes    
 * boxplots are not traditinal. they show specific quantiles 
 
-
-## Instrument comparisons 
-
-### --> ? if diff instruments show similar results, should just use all of the data w/o calibrating? do we drop "poor" performing instrments (e.g, NS 3?)
-
-observations   
-* many/most instruments have extreme values
-
-```{r, fig.height=12}
+ 
+```{r, fig.height=12, eval=F}
 p <- list()
 
 #give each facet its own instrument_id legend
@@ -991,9 +1208,11 @@ for(i in seq_along(ap)) {
   #i=1
 
   #only plot a subset of the data
-  p[[i]] <- dt0 %>%
-  #drop Roosevelt Garage
-  filter(location != "MS0000",
+  p[[i]] <- dt_stops %>%
+  
+  filter(
+    ##drop Roosevelt Garage
+    #location != "MS0000",
          variable== ap[i]
          ) %>%
     
@@ -1019,11 +1238,9 @@ ggarrange(plotlist =  p, ncol = 2, nrow = 4)
 ```
 
 
-
-
 * labels are for the min/max reading of each instrument 
 
-```{r, fig.height=12, eval=F}
+```{r, fig.height=12, eval=T}
  
 p <- list()
 
@@ -1032,12 +1249,10 @@ for(i in seq_along(ap)) {
   #i=1
 
   #only plot a subset of the data
-  df <- dt0 %>%
-    #drop Roosevelt Garage
-    filter(location != "MS0000",
-           variable== ap[i]) #%>% 
-  ##example - look at a subset of data. for initial plotting
-    #filter(sample(c(TRUE, FALSE), size = nrow(.), prob = c(0.1, 0.9), replace = T))
+  df <- dt_stops %>%
+            ##drop Roosevelt Garage
+    filter(#location != "MS0000",
+           variable== ap[i])  
     
   #summary table for labels
   df_sum <- df %>%
@@ -1069,352 +1284,518 @@ for(i in seq_along(ap)) {
   
   }
 
-ggarrange(plotlist =  p, 
-          ncol = 2, nrow = 4
-          )
-
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
 
 
 ```
 
-
-## Temporal Trends 
-
-notes   
-* note, plotting non-extreme values, otherwise can't see any trends in the plots    
-  - if on log scale, some values are dropped (e.g., many for BC since aethalometer instrument is noisy) 
+Expected instrument values
 
 ```{r}
-#high_q <- 0.99
-```
-
-by month 
-
-```{r, fig.height=12}
-# by month
-
-p <- list()
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-
-  #only plot a subset of the data
-  p[[i]] <- dt0 %>%
-    
-    filter(variable== ap[i],
-           ##don't plot extremes
-           #value <= quantile(value, high_q),
-           location != "MS0000",
-           ) %>%
-    
-    mutate(
-    month = factor(month(time, label = T))
-    ) %>%
-    
-    #calc stats for alternative boxplots
-    group_by(instrument_id, variable, primary_instrument, month) %>%
-    alt_boxplot(var = "value") %>%  
-    
-    ggplot(aes(x=month,
-               col=instrument_id, linetype=primary_instrument
-               )) +
-    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
-                 stat = "identity",
-               ) + 
-
-    # # what is group=1?
-    stat_summary(aes(y=Q50,
-                 group=instrument_id,    #group=1,
-                     ), 
-                 fun="mean", geom="line") +
-    
-  facet_wrap(~variable, scales="free") +
-    
-    #don't show linetype in legend 
-    #guides(linetype = FALSE) + 
-    #scale_y_log10() +
-    
-    labs(y= "value",
-         col="ID",
-         linetype = "Instrument"
-         )  
-  
-  #p[[i]]
-  
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
-
+instrument_range %>%
+  kable(caption = "Instrumet measurement ranges. Note, nephs don't have a max.") %>%
+  kable_styling()
 
 ```
-
-by weekday
-
-```{r, fig.height=12}
-p <- list()
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-
-  #only plot a subset of the data
-  p[[i]] <- dt0 %>%
-    
-    filter(variable== ap[i],
-           location != "MS0000",
-           ) %>%
-    mutate(
-      weekday = weekdays(time, abbreviate = T),
-      weekday = factor(weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
-    ) %>%
-    
-    #calc stats for alternative boxplots
-    group_by(instrument_id, variable, primary_instrument, weekday) %>%
-    alt_boxplot(var = "value") %>%  
-    
-    ggplot(aes(x=weekday,
-               col=instrument_id, linetype=primary_instrument
-               )) +
-    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
-                 stat = "identity",
-               ) + 
-
-    # # what is group=1?
-    stat_summary(aes(y=Q50,
-                 group=instrument_id,    #group=1,
-                     ), 
-                 fun="mean", geom="line") +
-    
-  facet_wrap(~variable, scales="free") +
-    
-    #don't show linetype in legend 
-    #guides(linetype = FALSE) + 
-    #scale_y_log10() +
-    
-    labs(y= "value",
-         col="ID",
-         linetype = "Instrument"
-         )  
-  
-  #p[[i]]
-  
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
-
-
-```
-
-by hour 
 
 ```{r}
-p <- list()
+"from Tim Gould, based on the highway-oriented measurements in the ACT-TRAP study. Some higher concentration levels from vehicle sources or other elevated pollution events are possible.  The ranges are a good indicator but any outlier should not automatically be discarded.
 
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-
-  #only plot a subset of the data
-  p[[i]] <- dt0 %>%
-    
-    filter(variable== ap[i],
-           location != "MS0000",
-           ) %>%
-    mutate(hour = factor(hour(time))) %>%
-    
-    #calc stats for alternative boxplots
-    group_by(instrument_id, variable, primary_instrument, hour) %>%
-    alt_boxplot(var = "value") %>%  
-    
-    ggplot(aes(x=hour,
-               col=instrument_id, 
-               linetype=primary_instrument
-               )) +
-    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
-                 stat = "identity",
-               ) + 
-
-    # # what is group=1?
-    stat_summary(aes(y=Q50,
-                 group=instrument_id,    #group=1,
-                     ), 
-                 fun="mean", geom="line") +
-    
-  facet_wrap(~variable, scales="free") +
-    
-    #don't show linetype in legend 
-    #guides(linetype = FALSE) + 
-    #scale_y_log10() +
-    
-    labs(y= "value",
-         col="ID",
-         linetype = "Instrument"
-         )  
-  
-  #p[[i]]
-  
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+Expected range of measurements by instrument
+BC:   0 - 15,000 ng/m^3
+CO2:  410 - 600 ppm
+NO2:  2 - 100 ppb
+neph.:  0.1 e-5 to 7.5 e-5 /m
+NanoScan particle total:  1500 to 80,000 pt/cm^3
+P-Trak particle count:  500 to 70,000 pt/cm^3"
 
 ```
 
 
- 
-## Spatial trends
-
-```{r, fig.height=18, eval=F}
-#hard to see any patterns b/c too much data & site are not organized. some sites inevitable left out b/c of missing route when site "order numbering" is done
-
-p <- list()
-    
-for(i in seq_along(ap)) {
-  #r=1
-  for(r in seq_along(unique_routes)) {
-    #i=1
-  
-    #only plot a subset of the data
-    p[[i]] <- dt0 %>%
-  
-      filter(
-         variable== ap[i],
-         location != "MS0000",
-         site == unique_routes[r]
-             ) %>%
-      #calc stats for alternative boxplots
-      group_by(site, location, #run_stop_no, 
-               variable) %>%
-      alt_boxplot(var = "value") %>%  #View()
-       
-      #plotting issue when use run_stop_no. might be b/c of NAs  
-      ungroup() %>%
-      # drop_na(run_stop_no) %>%
-      # mutate(#run_stop_no = as.factor(run_stop_no)
-      #        run_stop_no = paste0(run_stop_no, "_", location)
-      #        ) %>%
-      
-      ggplot(aes(y= location, 
-               #y= run_stop_no, 
-                 )) +
-  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax,
-                   ), 
-                   stat = "identity", 
-                 ) +     
-      facet_grid(site~variable, scales="free") + #site
-      labs(y= "Stop No.",
-           col="",
-           linetype = ""
-           )  
-   #p[[i]] 
+amount of data outside of these ranges
    
+* out of range date is more likely to be below the minimum instrument range. Removing all values outside the instrument range could thus bias overall median slightly up (this was more true when we ran this at the raw second level, where ~16% of BC data was below the min)
+
+```{r}
+dt_stops %>%
+  #observations per pollutant
+  group_by(variable, #instrument_id
+           ) %>%
+  mutate(n_original = n()) %>%
+  ungroup() %>%
+  
+  left_join(instrument_range) %>%
+  #filter(value >= Min, value <= Max) %>% #View()
+  mutate(below_min = value < Min,
+         above_max = value > Max
+         ) %>%
+  
+  group_by(variable, #instrument_id
+           ) %>%
+  summarize(
+    n_original = unique(n_original),
+    n_below_min = sum(below_min),
+    n_above_max = sum(above_max),
+    
+    prop_below_min = mean(below_min),
+    prop_above_max = mean(above_max),
+    total_prop_out_of_range = sum(prop_below_min, prop_above_max, na.rm = T)
+  ) %>%
+  kable(caption = "proportion of data outside the instrument range. N = number of stops (~309 stops x ~29 visits/stop)", digits = 2) %>%
+  kable_styling()
+
+
+```
+
+stop estimates when values outside the range of data are dropped
+
+```{r}
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=3
+
+  #only plot a subset of the data
+  df <- dt_stops %>%
+    left_join(instrument_range) %>% 
+    
+    #neph has no max. need a number to avoid an error
+    mutate(Max = ifelse(is.na(Max), 9999999, Max)) %>% #View()
+    
+    filter( 
+           variable== ap[i],
+           #drop values outside the expected instrument range
+           value >= Min, value <= Max 
+           ) 
+    
+  #summary table for labels
+  df_sum <- df %>%
+    # add min/max labels
+    group_by(primary_instrument, instrument_id) %>%
+    summarize(
+      min = min(value),
+      max=max(value)
+      )  %>%
+    #make long format to avoid overlapping labels later
+    gather(kind, value, min,max)
+    
+  p[[i]] <- df %>% 
+    
+    ggplot(aes(x=value, col=instrument_id, linetype=primary_instrument),) + 
+    geom_density() + 
+    facet_wrap(~variable, scales="free") +
+    
+    geom_text_repel(data=df_sum, aes(x=value, y=0, label=value), show.legend = F ) +
+     
+    #theme(legend.justification=c(1,1), legend.position=c(1,1)) + 
+    #don't show linetype in legend 
+    guides(linetype = FALSE)
+   
+    # don't do since we have values <=0 
+    #scale_x_log10()
+  
+  p[[i]]
+  
   }
-  #plot each route separately
-  print(ggarrange(plotlist =  p, ncol = 2, nrow = 4))
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "Stop medians when stops with values outside an instrument range are dropped")
+
+```
+
+## Update data
+
+```{r}
+dt_stops2 <- dt_stops %>%
+    left_join(instrument_range) %>% 
+    #neph has no max. need a number to avoid an error
+    mutate(Max = ifelse(is.na(Max), 9999999, Max)) %>% #View()
+    filter(
+      #drop values outside the expected instrument range
+      value >= Min, value <= Max 
+           )
+
+#keep approved stop data, but see raw values
+dt2 <- dt_stops2 %>%
+  distinct(date, location, instrument_id) %>%
+  left_join(dt)
+
+```
+
+
+# Time series of low/high values
+
+high readings 
+
+```{r}
+# pull out stops when we saw max values
+extreme_high <- dt_stops2 %>%
+  group_by(variable) %>%
+  filter(value == max(value)) %>% 
+  #ungroup() %>%
+  distinct(date, location, instrument_id) %>%
+  group_by(date, location) %>%
+  summarize(instrument_id = paste0(unique(instrument_id), collapse = "|"))
+  
+extreme_high %>%
+  kable(caption = "stops where the max instrument value has been observed") %>%
+  kable_styling()
+```
+
+* high instrument observations tend to occur when other particle readings are also high, particularly for particle instruments
+
+* CO2_19 (backup) has much higher readings than co2_14 (primary) on 6/13 and higher readings than other CO2 readings.  
+
+### --> drop co2_19 here? and elsewhere? note: co2_19 also recorded the highest co2 readings in the dataset on the same day at different stops
+
+```{r, fig.height=12}
+p <- list()
+
+m <- 100
+
+for (i in 1:nrow(extreme_high)) {
+  #i=3
+  
+  p[[i]] <- dt2 %>% #dim()
+
+    filter(date == extreme_high$date[i] & location == extreme_high$location[i]) %>%
+    mutate(
+      #change neph units to improve plotting
+      value = ifelse(variable %in% c("neph_bscat"), value*10^6, value ),
+      #value = ifelse(variable %in% c("no2"), value*10, value ),
+      #will put these on a different scale 
+      value = ifelse(variable %in% c("co2_umol_mol", "no2", "neph_bscat"), value*m, value ),
+      pt_size = ifelse(grepl(extreme_high$instrument_id[i], instrument_id), 1.5, 1)
+        #ifelse(instrument_id == extreme_high$instrument_id[i], 1.5,1)  
+      ) %>%  {
+    
+    ggplot(., aes(x=time, y=value)) + 
+    
+    #black points make it easier to ID questionnable data
+    #geom_point(data=subset(., instrument_id == extreme_high$instrument_id[i])) +
+    geom_point(data=subset(., grepl(extreme_high$instrument_id[i], instrument_id) )
+               ) +
+    
+    geom_point(aes(shape=instrument_id, col=variable,
+      #make points bigger/thicker
+      size = pt_size, #stroke=pt_size 
+      )) +
+    
+    facet_wrap(date~location) +
+    scale_shape_manual(values = c(1:length(unique(dt_stops$instrument_id)))) +
+    
+    #second axis for gas/neph
+    scale_y_continuous(
+      sec.axis = sec_axis( trans=~./m, name="CO2 (ppm), NO2 ( ppb), Neph (x10^6 m-1)")
+      ) +
+    #don't show size in legend 
+    guides(size = F, col=F) + 
+    
+    labs(y = "Particle Instruments",
+         title = paste0("extreme_high: ", gsub("\\|", ", ", extreme_high$instrument_id[i] )    )
+    )
+        
+      }
+  
+  p[[i]]  
+  
 }
 
+ggarrange(plotlist =  p, 
+          #common.legend = T,
+          ncol = 2, nrow = 3) %>%
+  annotate_figure(top = "Plots of when high instrument readings occur in remaining data.") 
+
+```
+
+-alternative to above using scaled values per variable (pollutant)
+
+* BC on 2/10 stands out here, but other particle instruments are also increasing though less so
+* keep NO2_2 on 5/11 since otehr instruments are also high? 
+
+### --> keep No2_2 on 5/11 since other instruments also high?
+
+```{r}
+p <- list()
+
+for (i in 1:nrow(extreme_high)) {
+  #i=3
+  
+  p[[i]] <- dt2 %>%  
+    
+    #scale values using all the data 
+    group_by(variable) %>%
+    mutate(value = scale(value)) %>%
+
+    filter(date == extreme_high$date[i] & location == extreme_high$location[i]) %>%
+    mutate(
+      pt_size = ifelse(grepl(extreme_high$instrument_id[i], instrument_id), 1.5, 1)
+      ) %>%  {
+    
+    ggplot(., aes(x=time, y=value)) + 
+    
+    #black points make it easier to ID questionnable data
+    geom_point(data=subset(., grepl(extreme_high$instrument_id[i], instrument_id) ) ) +
+    
+    geom_point(aes(shape=instrument_id, col=variable,
+      #make points bigger/thicker
+      size = pt_size, #stroke=pt_size 
+      )) +
+    
+    facet_wrap(date~location) +
+    scale_shape_manual(values = c(1:length(unique(dt_stops$instrument_id)))) +
+    
+    #don't show size in legend 
+    guides(size = F, col=F) + 
+    
+    labs(y = "Scaled Value: (X-mean)/SD",
+         title = paste0("extreme_high: ", gsub("\\|", ", ", extreme_high$instrument_id[i] )    )
+    )
+        
+      }
+  
+  p[[i]]  
+  
+}
+
+ggarrange(plotlist =  p, 
+          ncol = 2, nrow = 3) %>%
+  annotate_figure(top = "Plots of when high instrument readings occur in remaining data.") 
 
 ```
 
 
 
-* selected some low, medium and high var sites (n~15 each), but can't see any patterns. There may be too many outliers/data?
+low readings 
+
+```{r}
+# pull out stops when we saw max values
+extreme_low <- dt_stops2 %>%
+  group_by(variable) %>%
+  filter(value == min(value) #| value == min(value),
+         ) %>% 
+  distinct(date, location, instrument_id) %>%
+  group_by(date, location) %>%
+  summarize(instrument_id = paste0(unique(instrument_id), collapse = "|"))
+  
+extreme_low %>%
+  kable(caption = "stops where the min instrument value has been observed") %>%
+  kable_styling()
+```
+
+* nothing stands out as being unordinaryly low? 
+
+```{r, fig.height=18}
+p <- list()
+
+m <- 100
+
+for (i in 1:nrow(extreme_low)) {
+  #i=8
+  
+  p[[i]] <- dt2 %>% #dim()
+
+    filter(date == extreme_low$date[i] & location == extreme_low$location[i]) %>%
+    mutate(
+      #change neph units to improve plotting
+      value = ifelse(variable %in% c("neph_bscat"), value*10^6, value ),
+      
+      value = ifelse(variable %in% c("co2_umol_mol"), value*10^-1, value ),
+      
+      #will put these on a different scale 
+      value = ifelse(variable %in% c("co2_umol_mol", "no2", "neph_bscat"), value*m, value ),
+      pt_size = ifelse(grepl(extreme_low$instrument_id[i], instrument_id), 1.5, 1)
+      ) %>%  {
+    
+    ggplot(., aes(x=time, y=value)) + 
+    
+    #black points make it easier to ID questionnable data
+    geom_point(data=subset(., grepl(extreme_low$instrument_id[i], instrument_id) )) +
+    
+    geom_point(aes(shape=instrument_id, col=variable,
+      #make points bigger/thicker
+      size = pt_size, #stroke=pt_size 
+      )) +
+    
+    facet_wrap(date~location) +
+    scale_shape_manual(values = c(1:length(unique(dt_stops$instrument_id)))) +
+    
+    #second axis for gas/neph
+    scale_y_continuous(
+      sec.axis = sec_axis( trans=~./m, name="CO2 (x10^-1 ppm), NO2 (ppb), Neph (x10^6 m-1)")
+      ) +
+    #don't show size in legend 
+    guides(size = F, col=F) + 
+    
+    labs(y = "Particle Instruments",
+         title = paste0("extreme_low: ", gsub("\\|", ", ", extreme_low$instrument_id[i] )    )
+    )
+        
+        
+      }
+  
+  p[[i]]  
+  
+}
+
+ggarrange(plotlist =  p[1:7], 
+          ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "Plots of when low instrument readings occur in remaining data.") 
+
+ggarrange(plotlist =  p[8:14], 
+          ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "Plots of when low instrument readings occur in remaining data.") 
+
+```
+
+-alternative to above w/ normalized variables by variable (pollutant) type 
+
+* BC tends to have low readings 
+
 
 ```{r, fig.height=12}
 
-
-#by site 
 p <- list()
 
-#sample a few sites w/ low, medium and high variability
-loc_sample <- dt0 %>%
-  filter(location != "MS0000") %>%
-  group_by(location) %>%
-  mutate(sd = sd(value)) %>%
-  ungroup() %>%
-  mutate(
-    sd_lvl = ifelse(sd >= quantile(sd, 0.66), "high",
-                      ifelse(sd < quantile(sd, 0.66) & sd >= quantile(sd, 0.33), "medium",
-                                                               "low")
-                      )
-    ) %>% 
-  #one row per site
-  distinct(location, sd_lvl) %>%
-  #take random sample from each SD level
-  group_by(sd_lvl) %>%
-  sample_n(15)  
-    
-
-#loc_sample <- sample(unique(dt0$location), size = 50, replace = F)
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-
-  #only plot a subset of the data
-  p[[i]] <- dt0 %>%
-
-    filter(
-       variable== ap[i]
-           ) %>%
-    
-    #only keep sample of sites
-    right_join(loc_sample) %>% 
-    
-    #calc stats for alternative boxplots
-      group_by(location, variable, instrument_id) %>%
-      alt_boxplot(var = "value") %>%  
-      
-      ggplot(aes(y= location, col=instrument_id)) +
-  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), 
-                   stat = "identity", 
-                 ) +     
-    
-    facet_grid(~variable, scales="free") + #site
-    labs( 
-         col="",
-         linetype = ""
-         )  
+for (i in 1:nrow(extreme_low)) {
+  #i=10
   
-  #p[[i]]
+  p[[i]] <- #dt_stops2 %>%  
+    dt2 %>%
+    
+    #scale values using all the data 
+    group_by(variable) %>%
+    mutate(value = scale(value)) %>%
+    
+    filter(date == extreme_low$date[i] & location == extreme_low$location[i]) %>%
+    mutate(
+      pt_size = ifelse(grepl(extreme_low$instrument_id[i], instrument_id), 1.5, 1)
+      ) %>% #View()
+  {
+    
+    ggplot(., aes(x=time, y=value)) + 
+    
+    #black points make it easier to ID questionnable data
+    geom_point(data=subset(., grepl(extreme_low$instrument_id[i], instrument_id) )) +
+    
+    geom_point(aes(shape=instrument_id, col=variable,
+                   size = pt_size)) +
+    
+    facet_wrap(date~location) +
+    scale_shape_manual(values = c(1:length(unique(dt_stops$instrument_id)))) +
+
+    #don't show size in legend 
+    guides(size = F, col=F) + 
+    
+    labs(y = "Scaled Value: (X-mean)/SD",
+         title = paste0("extreme_low: ", gsub("\\|", ", ", extreme_low$instrument_id[i] )    )
+    )
+        
+        
+      }
   
-  }
+  p[[i]]  
+  
+}
 
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+ggarrange(plotlist =  p[1:7], 
+          ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "Plots of when low instrument readings occur in remaining data.") 
 
-
+ggarrange(plotlist =  p[8:14], 
+          ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "Plots of when low instrument readings occur in remaining data.") 
 
 ```
 
+
+## Update data
+
+```{r}
+
+dt_stops3 <- dt_stops2 %>%
+  filter(
+    #drop co2_19 (backup instrument) readings for a day when these readings were much higher than other collocated instrument and other days 
+    !(date ==extreme_high$date[3] & location== extreme_high$location[3] & instrument_id==extreme_high$instrument_id[3])
+  )
+
+```
 
 
 # Compare collocated instruments 
-
-### ---> calculate R2, RMSE between these; also mean or range of diff? 
-
-```{r}
-
-```
-
 
 ### --> pull lab/garage collocation data from results table (see locations: LABC, RM114, WILCOXAMB that are not necessarily collocation times)
 
 - don't include lab collocations here? 
 - is there a NanoScan clock issue still?
 
-
-
-
 ```{r}
-dt_stops_wide <- dt_stops %>%
+dt_stops_wide <- dt_stops3 %>%
   select(-primary_instrument) %>%
-  spread(instrument_id, median_value)
+  spread(instrument_id, value)
 
 # dt_wide <- dt %>%
 #   spread(instrument_id, value) 
   
 ```
 
+### --> note, have to modify code if have > 2 collocated duplicate instruments (e.g. PMPTSCREEN)
+
+```{r}
+df <- data.frame()
+
+#only keep stop data w/ collocations
+colo3 <- dt_stops3 %>%
+  group_by(time, location, variable) %>%
+  filter(length(unique(instrument_id)) >1 ) %>% 
+  ungroup() %>%
+  #make sure this is arranged by time
+  arrange(time)
+  #select(-primary_instrument)
+
+for(i in seq_along(ap)) {
+  #i=8
+  
+  temp <- colo3 %>%
+    filter(variable == ap[i]) %>%
+    group_by(variable) %>% #View()
+    summarize(
+      n_pairs = n()/2,
+      
+      R2_reg = cor(
+        .$value[.$instrument_id == unique(.$instrument_id)[1] ],
+        .$value[.$instrument_id == unique(.$instrument_id)[2] ]
+                   )^2,
+      R2_mse = r2_mse_based(
+        .$value[.$instrument_id == unique(.$instrument_id)[1] ],
+        .$value[.$instrument_id == unique(.$instrument_id)[2] ]
+        ),
+      RMSE =rmse(
+        .$value[.$instrument_id == unique(.$instrument_id)[1] ],
+        .$value[.$instrument_id == unique(.$instrument_id)[2] ]
+        )
+      ) %>%
+    mutate_at(vars(contains("R2")), ~round(., 2)) %>%
+    #note: neph gets 0 b/c values are small
+    mutate(RMSE = round(RMSE, 0)
+        
+    )  
+  
+  df <- rbind(df, temp)
+  
+}
+
+df %>%
+  kable(caption = "Agreement between collocated duplicate instruments. Based on site medians", 
+        #digits = 2
+          ) %>%
+  kable_styling()
+
+```
+
+
+* BC looks good 
 
 ```{r}
 dt_stops_wide %>%
@@ -1424,7 +1805,9 @@ dt_stops_wide %>%
 
 ```
 
-* poor CO2 fit 
+* CO2 has a poor fit w/ the backup instrument, which tends to report high readings
+
+### --> drop co2_19, especially since it is never used on its own?
 
 ```{r}
 dt_stops_wide %>%
@@ -1434,8 +1817,7 @@ dt_stops_wide %>%
 
 ```
 
-* poor NO2 fit. NO2_1 had issues?    
-* which instrument do we trust?   
+* NO2 looks good 
 
 ```{r}
 dt_stops_wide %>%
@@ -1445,6 +1827,7 @@ dt_stops_wide %>%
   
 ```
 
+* nephs look good
 
 ```{r}
 dt_stops_wide %>%
@@ -1453,8 +1836,7 @@ dt_stops_wide %>%
 
 ```
 
-* PMDISC_8 has some low readings. 
-
+* discminis look good
 
 ```{r}
 dt_stops_wide %>%
@@ -1463,6 +1845,8 @@ dt_stops_wide %>%
 
 ```
 
+* PTRAKS look good
+
 ```{r}
 dt_stops_wide %>%
   colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93", col.by = "site") + 
@@ -1470,6 +1854,7 @@ dt_stops_wide %>%
 
 ```
 
+* screened P-TRAKS look good   
 * only these 2 screened PTRAKS were collocated.
 
 ```{r}
@@ -1479,10 +1864,9 @@ dt_stops_wide %>%
 
 ```
 
-* PMSCAN 3 has poor readings 
+* PMSCAN 3 has lower readings 
 
-### --> drop SCAN 3?
-
+### --> drop SCAN 3 since it was a much older instrument, and we only collected a few extra days of data with it? 
 
 ```{r}
 dt_stops_wide %>%
@@ -1491,7 +1875,7 @@ dt_stops_wide %>%
 
 ```
 
-## Collocation time series
+## Collocation instrument time trends
 
 *see if duplicate instruments behave differenlty over time when in exact same place 
 
@@ -1511,7 +1895,7 @@ for (i in seq_along(instruments)) {
     
     select(date, time, location, site, variable, contains(paste0(instruments[i], "_" ))) %>%
     drop_na() %>%
-    gather("instrument_id", "median_value", contains(instruments[i])) 
+    gather("instrument_id", "value", contains(instruments[i])) 
   
   if(i==1) {
     colo <- colo0
@@ -1530,34 +1914,54 @@ colo <- colo %>%
 
 ```
 
+### --> ? things look good? would expect concentrations to increase as the day goes on if you depart early on, and the opposite to happen if you start in the afternoon
+
+
 ```{r, fig.height=12}
 p <- list()
 
 #give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
 
 for(i in seq_along(ap)) {
-  #i=1
+  #i=2
   
   p[[i]] <- colo %>%
     
-    filter(variable == ap[i]) %>%
+    filter(variable == ap[i]) %>% #View()
     
-    group_by(instrument_id, date) %>%
+    group_by(variable, #instrument_id, 
+             date) %>%
     #calculate time since start of run
-    mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
+    mutate(first_stop = min(time),
+           time = as.numeric(difftime(time, first_stop, units = "hours")),
+           
+           ) %>%  # View()
     
-    ggplot(aes(x=time, y=median_value, col=instrument_id, linetype=primary_instrument)) +
+    ggplot(aes(x=time, y=value, 
+               #col=factor(date),
+               #col=instrument_id, 
+               linetype=primary_instrument)) +
     facet_wrap(~variable, scales="free") +
-    geom_smooth() +
+    geom_smooth(aes(col=factor(first_stop),), se=F,
+                alpha=0.8
+                ) +
+    geom_smooth(col="black") +
     
-    labs(x= "hours since departing Roosevelt garage",
-         col="",
+    # geom_point(aes(col=factor(date)), alpha=0.8) + geom_line(aes(col=factor(date)), alpha=0.8) +
+    # geom_point() + geom_line() +
+    
+    labs(#title = "collocated instrument readings",
+         x= "hours since first stop",
+         col="1st Stop Time",
          linetype=""
          )  
   
+  p[[i]]
+  
   }
 
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "collocated instrument readings. black = overall trend")
 
 ```
 
@@ -1787,6 +2191,8 @@ ggarrange(plotlist = p) %>%
 
 ### --> issue: why do plots show time since departing roosevelt  as > 8 hrs??
 
+### --> facet by departing time...and route??
+
 * see how values change as a sampling day goes on 
 
 - see some instrument sensitivity over time (e.g., CO2 sensitiviy early on)?
@@ -1808,7 +2214,7 @@ for(i in seq_along(ap)) {
     #calculate time since start of run
     mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
     
-    ggplot(aes(x=time, y=median_value, col=instrument_id,
+    ggplot(aes(x=time, y=value, col=instrument_id,
                linetype=primary_instrument
                )) +
     geom_smooth() +
@@ -1836,7 +2242,7 @@ dt_stops <- dt_stops %>%
   
 #plot with all the data
 p0 <- dt_stops %>%
-    ggplot(aes(x=run_stop_no, y=median_value, col=instrument_id,
+    ggplot(aes(x=run_stop_no, y=value, col=instrument_id,
                linetype=primary_instrument
                )) +
    #geom_boxplot() + 
@@ -1882,9 +2288,15 @@ ggarrange(plotlist =  p, ncol=2, nrow=4)
 ### --> ? select what intruments to keep? 
 
 
-# ? Calibrate instrument readings to the mean
+# Calibrate instrument readings to the mean
 
--only do this if instruments are reasonably aligned?
+-only do this if instruments are reasonably aligned
+
+### --> calibrate all remaining instruments (i.e., not the nanoscans or CO2) to the mean since there was good agreement. Won't calibrate the screened PTRAKS since not all were collocated, though we know that 93 and 94 were similar when they were unscreened, and that 94 and 3 were similar, thus we will assume that at least 3/4 of the instruments were in good agrement. We don't have any collocation information for PTRAK 2, which collected a substantial amount of data.
+
+### --> see if there is PTRAK 2 lab collocation information
+
+
 
 ```{r}
 
@@ -1892,6 +2304,299 @@ ggarrange(plotlist =  p, ncol=2, nrow=4)
 
 
 
+# Temporal Trends 
+
+### --> use stop data. dt_stops3 ?
+
+### --> can probably delete lientype=instrument_id after drop some instruments
+
+notes   
+* note, plotting non-extreme values, otherwise can't see any trends in the plots    
+  - if on log scale, some values are dropped (e.g., many for BC since aethalometer instrument is noisy) 
+
+```{r}
+#high_q <- 0.99
+```
+
+by month 
+
+
+```{r, fig.height=12}
+# by month
+
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt_stops3 %>%
+    
+    filter(variable== ap[i]) %>%
+    mutate(
+    month = factor(month(time, label = T))
+    ) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument, month) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=month,
+               col=instrument_id, linetype=primary_instrument
+               )) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
+                 stat = "identity",
+               ) + 
+
+    # # what is group=1?
+    stat_summary(aes(y=Q50,
+                 group=instrument_id,    #group=1,
+                     ), 
+                 fun="mean", geom="line") +
+    
+  facet_wrap(~variable, scales="free") +
+    
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+
+    labs(y= "value",
+         col="ID",
+         linetype = "Instrument"
+         )  
+  
+  p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+by weekday
+
+```{r, fig.height=12}
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt_stops3 %>%
+    
+    filter(variable== ap[i]) %>%
+    mutate(
+      weekday = weekdays(time, abbreviate = T),
+      weekday = factor(weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+    ) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument, weekday) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=weekday,
+               col=instrument_id, linetype=primary_instrument
+               )) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
+                 stat = "identity",
+               ) + 
+
+    # # what is group=1?
+    stat_summary(aes(y=Q50,
+                 group=instrument_id,    #group=1,
+                     ), 
+                 fun="mean", geom="line") +
+    
+  facet_wrap(~variable, scales="free") +
+    
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    #scale_y_log10() +
+    
+    labs(y= "value",
+         col="ID",
+         linetype = "Instrument"
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+
+```
+
+by hour 
+
+```{r}
+p <- list()
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt_stops3 %>%
+    
+    filter(variable== ap[i]) %>%
+    mutate(hour = factor(hour(time))) %>%
+    
+    #calc stats for alternative boxplots
+    group_by(instrument_id, variable, primary_instrument, hour) %>%
+    alt_boxplot(var = "value") %>%  
+    
+    ggplot(aes(x=hour,
+               col=instrument_id, 
+               linetype=primary_instrument
+               )) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), 
+                 stat = "identity",
+               ) + 
+
+    # # what is group=1?
+    stat_summary(aes(y=Q50,
+                 group=instrument_id,    #group=1,
+                     ), 
+                 fun="mean", geom="line") +
+    
+  facet_wrap(~variable, scales="free") +
+    
+    #don't show linetype in legend 
+    #guides(linetype = FALSE) + 
+    #scale_y_log10() +
+    
+    labs(y= "value",
+         col="ID",
+         linetype = "Instrument"
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+```
+
+ 
+# Spatial trends
+
+```{r, fig.height=18, eval=F}
+#hard to see any patterns b/c too much data & site are not organized. some sites inevitable left out b/c of missing route when site "order numbering" is done
+
+p <- list()
+    
+for(i in seq_along(ap)) {
+  #r=1
+  for(r in seq_along(unique_routes)) {
+    #i=1
+  
+    #only plot a subset of the data
+    p[[i]] <- dt0 %>%
+  
+      filter(
+         variable== ap[i],
+         location != "MS0000",
+         site == unique_routes[r]
+             ) %>%
+      #calc stats for alternative boxplots
+      group_by(site, location, #run_stop_no, 
+               variable) %>%
+      alt_boxplot(var = "value") %>%  #View()
+       
+      #plotting issue when use run_stop_no. might be b/c of NAs  
+      ungroup() %>%
+      # drop_na(run_stop_no) %>%
+      # mutate(#run_stop_no = as.factor(run_stop_no)
+      #        run_stop_no = paste0(run_stop_no, "_", location)
+      #        ) %>%
+      
+      ggplot(aes(y= location, 
+               #y= run_stop_no, 
+                 )) +
+  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax,
+                   ), 
+                   stat = "identity", 
+                 ) +     
+      facet_grid(site~variable, scales="free") + #site
+      labs(y= "Stop No.",
+           col="",
+           linetype = ""
+           )  
+   #p[[i]] 
+   
+  }
+  #plot each route separately
+  print(ggarrange(plotlist =  p, ncol = 2, nrow = 4))
+}
+
+
+```
+
+* selected some low, medium and high var sites (n~15 each), but can't see any patterns. There may be too many outliers/data?
+
+```{r, fig.height=12}
+
+#by site 
+p <- list()
+
+#sample a few sites w/ low, medium and high variability
+loc_sample <- dt_stops3 %>%
+  group_by(location) %>%
+  mutate(sd = sd(value)) %>%
+  ungroup() %>%
+  mutate(
+    sd_lvl = ifelse(sd >= quantile(sd, 0.66), "high",
+                      ifelse(sd < quantile(sd, 0.66) & sd >= quantile(sd, 0.33), "medium",
+                                                               "low")
+                      )
+    ) %>% 
+  #one row per site
+  distinct(location, sd_lvl) %>%
+  #take random sample from each SD level
+  group_by(sd_lvl) %>%
+  sample_n(15)  
+    
+
+#loc_sample <- sample(unique(dt0$location), size = 50, replace = F)
+
+#give each facet its own instrument_id legend
+for(i in seq_along(ap)) {
+  #i=1
+
+  #only plot a subset of the data
+  p[[i]] <- dt_stops3 %>%
+
+    filter(variable== ap[i]) %>%
+    
+    #only keep sample of sites
+    right_join(loc_sample) %>% 
+    
+    #calc stats for alternative boxplots
+      group_by(location, variable, instrument_id) %>%
+      alt_boxplot(var = "value") %>%  
+      
+      ggplot(aes(y= location, col=instrument_id)) +
+  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), 
+                   stat = "identity", 
+                 ) +     
+    
+    facet_grid(~variable, scales="free") + #site
+    labs( 
+         col="",
+         linetype = ""
+         )  
+  
+  #p[[i]]
+  
+  }
+
+ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+
+```
 
 
 
