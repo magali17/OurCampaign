@@ -374,7 +374,9 @@ doe %>%
 
 
 
-```{r}
+```{r, eval=F}
+# don't need to show this. next fig is similar but updated 
+
 doe %>%
   filter(freq == "minute") %>%
   distinct(location_doe, variable, pollutant, date) %>%
@@ -394,7 +396,6 @@ doe %>%
 
 ```
 
-
 ```{r, eval=F}
 # when does sampling start/stop or sites with multiple instruments measuring PM2.5?
 doe %>%
@@ -408,7 +409,7 @@ doe %>%
     end_date = max(date)
   ) %>%
   arrange(location_doe, start_date)
-
+ 
 ```
 
 ```{r}
@@ -450,20 +451,22 @@ doe2 %>%
   labs(title = "Data used to estimate annual averages at AQS sites")
 
 
-## table
-doe2 %>%
-  filter(freq == "minute",
-         location_doe %in% c('AQS10W', 'AQSBH'),
-         pollutant == "PM2.5"
-         ) %>%
-  group_by(location_doe, variable) %>%
-  summarize(
-    start_date = min(date),
-    end_date = max(date)
-  ) %>%
-  arrange(location_doe, start_date) %>%
-  kable(caption = "PM2.5 readings used to calculate an annual average at 10W and BH since multiple instruments were used over the course of the ACT TRAP study period") %>%
-  kable_styling()
+# # no need to show this
+# ## table
+# doe2 %>%
+#   filter(freq == "minute",
+#          location_doe %in% c('AQS10W', 'AQSBH'),
+#          pollutant == "PM2.5"
+#          ) %>%
+#   group_by(location_doe, variable) %>%
+#   summarize(
+#     start_date = min(date),
+#     end_date = max(date)
+#   ) %>%
+#   arrange(location_doe, start_date) %>%
+#   kable(caption = "PM2.5 readings used to calculate an annual average at 10W and BH since multiple instruments were used over the course of the ACT TRAP study period") %>%
+#   kable_styling()
+
 ```
 
 observations per instrument 
@@ -937,7 +940,7 @@ fieldnotes2 <- fieldnotes %>%
 * note, some instruments have very high, abnormal readings
   - e.g., neph 176
 
-```{r}
+```{r, fig.height=12}
 #density plots 
 
 p <- list()
@@ -1349,7 +1352,7 @@ dt_stops %>%
 
 stop estimates when values outside the range of data are dropped
 
-```{r}
+```{r, fig.height=12}
 p <- list()
 
 #give each facet its own instrument_id legend
@@ -1516,7 +1519,7 @@ ggarrange(plotlist =  p,
 
 ### --> keep No2_2 on 5/11 since other instruments also high?
 
-```{r}
+```{r, fig.height=12}
 p <- list()
 
 for (i in 1:nrow(extreme_high)) {
@@ -1794,11 +1797,15 @@ df %>%
 
 ```
 
+```{r}
+p <- list()
+
+```
 
 * BC looks good 
 
 ```{r}
-dt_stops_wide %>%
+p[[1]] <- dt_stops_wide %>%
   colo.plot(x.variable = "BC_0066", y.variable = "BC_0063", col.by = "site", 
             slope_digits = 2) + 
   labs(col="Route")
@@ -1810,7 +1817,7 @@ dt_stops_wide %>%
 ### --> drop co2_19, especially since it is never used on its own?
 
 ```{r}
-dt_stops_wide %>%
+p[[2]] <- dt_stops_wide %>%
   colo.plot(x.variable = "CO2_14", y.variable = "CO2_19", col.by = "site"
             ) + 
   labs(col="Route")
@@ -1820,7 +1827,7 @@ dt_stops_wide %>%
 * NO2 looks good 
 
 ```{r}
-dt_stops_wide %>%
+p[[3]] <- dt_stops_wide %>%
   colo.plot(x.variable = "NO2_2", y.variable = "NO2_1", col.by = "site", 
             slope_digits = 0, int_digits = 2) + 
   labs(col="Route")
@@ -1830,7 +1837,7 @@ dt_stops_wide %>%
 * nephs look good
 
 ```{r}
-dt_stops_wide %>%
+p[[4]] <- dt_stops_wide %>%
   colo.plot(x.variable = "PM25_176", y.variable = "PM25_205", col.by = "site", int_digits = 6, rmse.digits = 6) + 
   labs(col="Route")
 
@@ -1839,7 +1846,7 @@ dt_stops_wide %>%
 * discminis look good
 
 ```{r}
-dt_stops_wide %>%
+p[[5]] <- dt_stops_wide %>%
   colo.plot(x.variable = "PMDISC_3", y.variable = "PMDISC_8", col.by = "site") + 
   labs(col="Route")
 
@@ -1848,7 +1855,7 @@ dt_stops_wide %>%
 * PTRAKS look good
 
 ```{r}
-dt_stops_wide %>%
+p[[6]] <- dt_stops_wide %>%
   colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93", col.by = "site") + 
   labs(col="Route")
 
@@ -1858,7 +1865,7 @@ dt_stops_wide %>%
 * only these 2 screened PTRAKS were collocated.
 
 ```{r}
-dt_stops_wide %>%
+p[[7]] <- dt_stops_wide %>%
   colo.plot(x.variable = "PMPTSCREEN_94", y.variable = "PMPTSCREEN_3", col.by = "site") + 
   labs(col="Route")
 
@@ -1869,11 +1876,20 @@ dt_stops_wide %>%
 ### --> drop SCAN 3 since it was a much older instrument, and we only collected a few extra days of data with it? 
 
 ```{r}
-dt_stops_wide %>%
+p[[8]] <- dt_stops_wide %>%
   colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", col.by = "site") + 
   labs(col="Route")
 
 ```
+
+```{r, fig.height=18}
+
+ggarrange(plotlist = p, ncol = 2, nrow = 4) %>%
+  annotate_figure(top = "Instrument Collocations")
+
+```
+
+
 
 ## Collocation instrument time trends
 
@@ -1966,6 +1982,16 @@ ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
 ```
 
 
+
+
+```{r}
+# STOP KNITTING
+
+knit_exit()
+
+```
+
+
 # AQS sites 
 
 Looking at the ACT TRAP field protocol, it looks like BC, NO2 and neph (also neph PM2.5) values are collected every minute, though these are not officially validated like the hourly data are. We will use these instead of hourly data since we want to compare these readings to our 2-minute collocations.
@@ -1990,7 +2016,6 @@ doe_annual <- doe2 %>%
 
 ```
 
-### --> edit code to compare estimates at the 2-min level? e.g. could have issues merging basd on time stamp to the second
 
 ```{r}
 # dt0_temp <- dt0 %>%
@@ -2011,9 +2036,18 @@ doe_annual <- doe2 %>%
 #   rename(doe_value = value,
 #          
 #          )
-  
+
+```
+
+
+### --> why so little collocation data? 
+
+### --> edit code to compare estimates at the 2-min level? e.g. could have issues merging basd on time stamp to the second
+
+
+```{r}
 #dt_doe <- left_join(dt0_w, doe2_w)
-dt_doe <- dt0 %>%
+dt_doe <- dt_stops3 %>%
   filter(variable %in% c("ma200_ir_bc1", "neph_bscat", "no2"),
          ) %>%
   select(-c(variable, primary_instrument)) %>%
@@ -2057,7 +2091,7 @@ for (i in seq_along(locs)) {
     #gather("doe_no2", "doe_value", matches("doe_no2")) 
     
     #put ng/m3 in ug/m3 units like DOE data 
-    mutate(mobile_monitoring_ma200_ir_bc1 = mobile_monitoring_ma200_ir_bc1/1000) %>%
+    mutate(mobile_monitoring_ma200_ir_bc1 = mobile_monitoring_ma200_ir_bc1/1000) %>% #View()
     
     colo.plot(x.variable = "doe_bc_633", y.variable = "mobile_monitoring_ma200_ir_bc1", 
               col.by = "location_doe", shape.var = "instrument_id", 
@@ -2185,107 +2219,6 @@ ggarrange(plotlist = p) %>%
 ```{r}
 
 ```
-
-
-# Instrument Time trends (site-level)
-
-### --> issue: why do plots show time since departing roosevelt  as > 8 hrs??
-
-### --> facet by departing time...and route??
-
-* see how values change as a sampling day goes on 
-
-- see some instrument sensitivity over time (e.g., CO2 sensitiviy early on)?
-
-```{r, fig.height=12}
-
-p <- list()
-
-#give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
-
-for(i in seq_along(ap)) {
-  #i=1
-  
-  p[[i]] <- dt_stops %>%
-    
-    filter(variable == ap[i]) %>%
-    
-    group_by(instrument_id, date) %>%
-    #calculate time since start of run
-    mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
-    
-    ggplot(aes(x=time, y=value, col=instrument_id,
-               linetype=primary_instrument
-               )) +
-    geom_smooth() +
-    facet_wrap(~variable, scales="free") +
-    
-    labs(x= "hours since departing Roosevelt garage",
-         col="",
-         linetype = ""
-         )  
-  
-  }
-
-ggarrange(plotlist =  p, ncol=2, nrow=4)
-
-```
-
-
-same as above but by stop order number
-
-```{r, fig.height=12, eval=F}
-#sequence of stop order each day
-dt_stops <- dt_stops %>%
-  group_by(date, instrument_id) %>%
-  mutate(run_stop_no = row_number() )
-  
-#plot with all the data
-p0 <- dt_stops %>%
-    ggplot(aes(x=run_stop_no, y=value, col=instrument_id,
-               linetype=primary_instrument
-               )) +
-   #geom_boxplot() + 
-  geom_smooth() +
-    facet_wrap(~variable, scales="free") +
-    
-    labs(x= "stop order number within a run",
-         col="",
-         linetype=""
-         )
-
-p <- list()
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-  
-  #only plot a subset of the data
-  p[[i]] <- p0 %+% subset(dt_stops, variable == ap[i])
-
-  }
-
-ggarrange(plotlist =  p, ncol=2, nrow=4)
-
-
-```
-
-
-## Instrument trends at overnight collocation
-
--see same drift issues over time?   
-- what instruments were placed overnight at AQS sites? just some?    
-- were different sampling protocols used at AQS sites (e.g., 15 min every 2 hrs)   
-
-```{r}
-
-
-
-```
-
-
-
-### --> ? select what intruments to keep? 
 
 
 # Calibrate instrument readings to the mean
