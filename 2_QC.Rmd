@@ -54,6 +54,8 @@ set.seed(1)
 common variables
 
 ```{r}
+mytz <- "America/Los_Angeles"
+
 start_date <- "2019-02-22"
 end_date <- "2020-03-17" #or: "2020-03-18" to capture all of 3/17 ?
 
@@ -261,7 +263,7 @@ dt0 <- left_join(dt0, run_stop_order)
 
 ## DOE 
 
-### --> need to adjust DOE data for daylight savings? [Dave is looking into it]
+### --> need to adjust DOE data for daylight savings [Dave is looking into it]
 
 ```{r}
 doe0 <- readRDS(file.path("Data", "doe_dt.rda"))
@@ -284,6 +286,8 @@ doe <- doe0 %>%
     !variable %in% drop_doe_vars,
          ) %>%
   mutate(
+    #tell R time is in PST. need this to merge correctly later w/ mobile monitoroing data. otherwise, R thinks this is in UTC.
+    time = with_tz(time, tzone = mytz),
     date = ymd(substr(time, 1, 10)),
     #crosswalk for our location IDs
     location = recode_factor(factor(location_doe),
@@ -321,9 +325,6 @@ doe <- doe0 %>%
     #only keep data for study period
     date >= ymd(start_date) & date <= ymd(end_date)
   )
-
-
-#distinct(doe[c("freq", "freq2")])
 
 ```
 
@@ -426,13 +427,8 @@ doe2 <- doe %>%
     # a diff ?FEM method starts sampling at BH 
     !(variable == "doe_pm25_fem_teo" & date > ymd("2019-11-25") & location_doe == 'AQSBH'),
     
-  )
+  ) 
 
-doe2_w <- doe %>%
-  select(-c(pollutant)) %>%
-  spread(variable, value)
-
-  
 ```
 
 * dropped overlapping data at 10W and BH: 
@@ -444,7 +440,9 @@ doe2_w <- doe %>%
 doe2 %>%
   distinct(location_doe, variable, pollutant, date) %>%
   
-  ggplot(aes(x=date, y=variable)) + 
+  ggplot(aes(x=date, y=variable
+             #y=pollutant
+             )) + 
   facet_grid(pollutant~location_doe, scales="free", space = "free_y") + 
   geom_point(alpha=0.1) +
   
@@ -469,6 +467,15 @@ doe2 %>%
 
 ```
 
+```{r}
+doe2 <- doe2 %>%
+  #rename each pollutant regardless of exact measurement instrument used
+  group_by(location_doe, location, date, time, pollutant) %>%
+  summarize(value = mean(value, na.rm = T)) %>% 
+  ungroup()
+
+```
+
 observations per instrument 
 
 * looks good. We have ~1 reading/minute at each site
@@ -478,7 +485,6 @@ doe2 %>%
   group_by(pollutant, location_doe) %>%
   summarize(
     total_samples = n(),
-    #samples_per_hour = total_samples/as.numeric(round(difftime(end_date, start_date, units="hour")))
     samples_per_hour = total_samples/as.numeric(difftime(max(date), min(date), units="hour"))
   ) %>%
   kable(caption = "Number of samples per site and pollutant used to estimate annual averages", digits = 0) %>%
@@ -1981,17 +1987,6 @@ ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
 
 ```
 
-
-
-
-```{r}
-# STOP KNITTING
-
-knit_exit()
-
-```
-
-
 # AQS sites 
 
 Looking at the ACT TRAP field protocol, it looks like BC, NO2 and neph (also neph PM2.5) values are collected every minute, though these are not officially validated like the hourly data are. We will use these instead of hourly data since we want to compare these readings to our 2-minute collocations.
@@ -2007,69 +2002,240 @@ We will have to use a mix of semi-hourly PM2.5 data and hourly data for BH and 1
   - full data annual avg
 
 ```{r}
-#calculate annual averages
-doe_annual <- doe2 %>%
-  group_by(location_doe, location, pollutant) %>%
-  summarize(
-    annual_avg = mean(value)
+ 
+#stop collocations
+dt_stops3_colo <- dt_stops3 %>%
+  filter(
+    #pollutants also measured at AQS sites
+    variable %in% c("ma200_ir_bc1", "neph_bscat", "no2"),
+    #only keep collocation sites
+    grepl("MC", location)
+    ) %>% 
+  
+  ### --> change from UTC to los angeles
+  
+  #drop seconds from time stamp (for DOE merging). change default tz of UTC
+  mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M")),  #tz=mytz
+         time = force_tz(time, tzone = mytz),
+         ) %>%  
+  #if duplicate instruments, take mean value
+  group_by(date, time, location, variable) %>%
+  summarize(value = mean(value)) %>% 
+  ungroup() %>%
+  
+  spread(variable, value) %>%
+  arrange(time)  %>%
+  
+  #rename pollutants
+  rename(BC = ma200_ir_bc1,
+         Neph = neph_bscat,
+         NO2 = no2
+         )  %>%
+  mutate(
+    # put in same units as DOE
+    ##change from ng/m3 to ug/m3
+    BC = BC/10^3,
+    ##change from bscat/m to (bscatx10^-4)/m
+    Neph = Neph*10^4
   )
 
+# data from DOE
+doe_colo <- dt_stops3_colo %>%
+  #also pull 2nd minute from DOE data
+  mutate(time = time+60) %>%
+  #add start time (1 min earlier)
+  rbind(dt_stops3_colo,.) %>%
+  #collocation times & places
+  select(time, location) %>%
+  arrange(time) %>% 
+  # doe data 
+  left_join(doe2) %>%  
+  #MC0406 not visited on 2020-03-13 06:41:00	
+  drop_na() %>%# View()
+  #calculate 2-min avg - same as median for 2 numbers.
+  group_by(date, location, location_doe, pollutant) %>%
+  summarize(value=mean(value)) %>% 
+  #wide format
+  pivot_wider(names_from = pollutant, values_from = value, names_prefix = "doe_") #%>%
+  #don't have mobile monitoring equivalent
+  #select(-doe_PM2.5) 
+  
+#merge our estimates and doe estimates
+dt_doe <- left_join(dt_stops3_colo, doe_colo) 
+  
+
 ```
 
+## Calibrate neph readings
+
+- if our neph readings are similar to the readings from AQS sites (near 1-1 line), we'll use Cooper's calibration curve to estimate PM2.5 mass concentration from bscat. Alternatively, we can create a new calibration based on the PM2.5 readings at the AQS sites we visited during our campaign (?).
+
+### --> update calibration curve if Dave has updates   
+### --> calibrate at 2-min level? 
 
 ```{r}
-# dt0_temp <- dt0 %>%
-#   filter(variable %in% c("ma200Pirbc1", "neph_bscat", "no2")) %>%
-#   select(-variable) %>%
-#   
-#   #group by everything except the value. not sure why these rows have diff readings for the same time, by the same instrument. could be an instrument error?
-#   #slice(1031986, 1031987, 125672, 125673, 717090, 717091) %>% View()
-#   # 2019-12-07 07:45:25	
-#   group_by_at(vars(-value)) %>%
-#   summarize(value = mean(value)) %>% View()
-#   
-#   
-#   
-#   spread(instrument_id, value)
-# 
-# test <- doe2 %>%
-#   rename(doe_value = value,
-#          
-#          )
+#convert bscat ___/m to PM2.5 ug/m3 
 
+#estimates from Cooper's work. this will be updated based on what Dave Slager finds.
+int <- 1.060539
+
+slope <- 2.509793 #*10
+  
 ```
-
-
-### --> why so little collocation data? 
-
-### --> edit code to compare estimates at the 2-min level? e.g. could have issues merging basd on time stamp to the second
-
 
 ```{r}
-#dt_doe <- left_join(dt0_w, doe2_w)
-dt_doe <- dt_stops3 %>%
-  filter(variable %in% c("ma200_ir_bc1", "neph_bscat", "no2"),
-         ) %>%
-  select(-c(variable, primary_instrument)) %>%
-  spread(instrument_id, value) %>%
-  arrange(time) %>%
-   
-  left_join(doe2_w) %>%
-  #drop data not collected at AQS sites
-  drop_na(location_doe)
+dt_doe <- dt_doe %>%
+  #estimate PM2.5 from neph readings
+  mutate(PM2.5 = Neph*slope + int)
 
 ```
+
+
+## 2-min collocations (medians)
+
+### --> neph PM2.5 estimates are Very low. multiplying slope by 10 makes thigns look better. the neph (bscatx10^-4) and PM2.5 (ug/m3) units should be correct. Does this suggest fitting a different calibration curve? Do DOE's calibration curves differ that much from ours?
+
+```{r}
+p <- list()
+
+#BC
+p[[1]] <- dt_doe %>%
+  colo.plot(x.variable = "doe_BC", y.variable = "BC", col.by = "location_doe", alpha_value = 0.8) +
+  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
+  labs(fill= "Overall Fit",
+       title = "BC (ug/m3)",
+       y = "Mobile Monitoring",
+       x = "DOE"
+       )
+
+#Neph
+p[[2]] <- dt_doe %>%
+  colo.plot(x.variable = "doe_Neph", y.variable = "Neph", col.by = "location_doe", alpha_value = 0.8) +
+  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
+  labs(fill= "Overall Fit",
+       title = "Nephelometer (bscat [x 10^-4]/m)",
+       y = "Mobile Monitoring",
+       x = "DOE"
+       )
+
+#PM2.5
+p[[3]] <- dt_doe %>%
+  colo.plot(x.variable = "doe_PM2.5", y.variable = "PM2.5", col.by = "location_doe", alpha_value = 0.8) +
+  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
+  labs(fill= "Overall Fit",
+       title = "PM2.5 (ug/m3)",
+       y = "Mobile Monitoring (neph estimate)",
+       x = "DOE"
+       )
+
+#NO2
+p[[4]] <- dt_doe %>%
+  colo.plot(x.variable = "doe_NO2", y.variable = "NO2", col.by = "location_doe", alpha_value = 0.8) +
+  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
+  labs(fill= "Overall Fit",
+       title = "NO2 (ppb)",
+       y = "Mobile Monitoring",
+       x = "DOE"
+       )
+  
+ggarrange(plotlist = p) %>%
+  annotate_figure(top = "2-min collocations (medians)")
+
+```
+
+## Annual Avg comparisons
+
+```{r}
+#calculate annual averages
+true_annual <- doe2 %>%
+  group_by(location_doe, location, pollutant) %>%
+  summarize(
+    true_avg = mean(value)
+  )
+
+short_term_annual <- dt_doe %>%
+  #make long format
+  gather("pollutant", "value", matches(c("bc", "neph", "no2", "PM2.5"))) %>%   
+  mutate(
+    source = ifelse(grepl("doe", pollutant), "DOE", "Mobile Monitoring"),
+    pollutant = gsub("doe_", "", pollutant)
+  )  %>%
+  #dorp places w/o data
+  drop_na() %>% 
+  group_by(location, location_doe, pollutant, source) %>%
+  summarize(
+    value = mean(value)
+  )
+
+#note that DOE PM2.5 has no MM equivalent (yet)
+true_annual <- left_join(true_annual, short_term_annual) %>%
+  drop_na(value) %>%
+  ungroup()
+
+```
+
+* annual average neph estimates are not great 
+
+```{r}
+p <- list()
+
+u_pollutant <- unique(true_annual$pollutant)
+
+for (i in seq_along(u_pollutant)) {
+  #i=1
+  df <- true_annual %>%
+    filter(pollutant == u_pollutant[i])
+    
+  range <-  df %>%
+    summarize(
+      min = min(c(true_avg, value)),
+      max = max(c(true_avg, value))
+    )  
+  
+  p[[i]] <- df %>%
+    ggplot(aes(x=true_avg, y=value, col=source)) + 
+    geom_point(aes(shape=location_doe)) + 
+    geom_smooth(method = "lm" ,se=F, aes()) + 
+    geom_abline(slope = 1, intercept = 0) + 
+    lims(x=c(range$min, range$max), y=c(range$min, range$max)) + 
+    labs(title = u_pollutant[i],
+         col = "2-min Est",
+         shape = "Location",         
+         x="True Annual Average",
+         y = "Estimate"
+         )
+  
+    # colo.plot(x.variable = "true_avg", y.variable = "value", col.by = "location", shape.var = "source", alpha_value = 0.8, mytitle = u_pollutant[i]) +
+  
+}
+
+ggarrange(plotlist = p) %>%
+  annotate_figure(top = "Annual average estimates from 2-min readings")
+
+```
+
+ 
+```{r}
+true_annual %>%
+  group_by(pollutant, source) %>%
+  summarize(
+    R2_reg = cor(true_avg, value)^2,
+    R2_mse = r2_mse_based(true_avg, value),
+    RMSE = rmse(true_avg, value)
+  ) %>%
+  kable(caption = "site annual average estimates from 2-min readings relative to the true annual average", 
+        digits = 2
+        ) %>%
+  kable_styling()
+  
+  
+```
+
+
+  
+### --> delete/update code
 
 ```{r, eval=F}
-#table of collocation times ??? Hard to ID exact times b/c diff instruments used at diff locations
-
-dt_doe %>%
-  group_by(location_doe, )
-
-```
-
-
-```{r}
 #BC 
 p <- list()
 
@@ -2106,7 +2272,7 @@ ggarrange(plotlist = p, ncol = 2, nrow=2) %>%
 
 ```
 
-```{r}
+```{r, eval=F}
 #no2
 
 p <- list()
@@ -2132,7 +2298,7 @@ ggarrange(plotlist = p) %>%
 
 * nephelometer collocations look good. This will justify our use of the ST model neph-PM2.5 calibration model (which uses AQS sites in the region) to adjust our readings
 
-```{r}
+```{r, eval=F}
 # nephs
 
 p <- list()
@@ -2170,7 +2336,7 @@ ggarrange(plotlist = p) %>%
 
 10W and BH don't have neph readings, but they have PM2.5. These should be correlated w/ our neph readings
 
-```{r}
+```{r, eval=F}
 
 # PM2.5
 p <- list()
@@ -2211,14 +2377,16 @@ ggarrange(plotlist = p) %>%
 
 
 
-## Calibrate neph readings
-
-- if our neph readings are similar to the readings from AQS sites (near 1-1 line), we'll use Cooper's calibration curve to estimate PM2.5 mass concentration from bscat. Alternatively, we can create a new calibration based on the PM2.5 readings at the AQS sites we visited during our campaign (?).
 
 
 ```{r}
+# STOP KNITTING
+
+knit_exit()
 
 ```
+
+
 
 
 # Calibrate instrument readings to the mean
