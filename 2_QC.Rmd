@@ -16,12 +16,14 @@ editor_options:
 ---
 # Overview 
 
-**Purpose**:    
+**Purpose**:   
+
 * This script documents the quality control procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. 
 
-**Approach**     
+**Approach**  
+
 * We check that calibrations and particle instrument zeroing occurred     
-* Instrument error checks: _____ 
+* Instrument error checks: _____    
 * Unit of analysis: Data are cleaned up at the stop level (2-minute median concentration) rather than the second level since that is our unit of analysis. Finer, second data can be a lot more variable and have a lot more extreme values. If your interest is in using these data at the second level, additional analyses may be necessary.    
 * At the stop level, we investigate the times when we observed extreme pollutant values (i.e., the lowest and highest readings). We do so by comparing these against other instruments to check that concentration patterns were similar.      
 * To assess instrument precision, we compare collocated instrument readings in the field and in the lab   
@@ -71,9 +73,12 @@ set.seed(1)
 
 # Upload data
 
-common variables
+common variables & functions
 
 ```{r}
+#functions
+source("0_Functions.R")
+
 mytz <- "America/Los_Angeles"
 
 start_date <- "2019-02-22"
@@ -144,6 +149,8 @@ dt0 <- readRDS(file.path("Data", "Original", "stop_data_2019-02-22_2020-03-17.rd
     !instrument_id %in% drop_instruments,
     #drop Roosevelt Garage
     #location != "MS0000"
+    #this location was only visited once
+    location != "MS0398"
   ) %>%
   #drop empty data
   drop_na(value) %>%
@@ -651,279 +658,7 @@ doe2 %>%
 ```
 
 
-# Functions
 
-* colocation plot fn
-
-```{r, colo.plot fn}
-
-# fn returns colocation plot w/ best fit info, RMSE and MSE-based R2
-
-colo.plot <- function(data.wide=mm.wide, 
-                      x.variable, x.label = "",
-                      y.variable, y.label = "",
-                      col.by = "",
-                      shape.var="",
-                      alpha_value = 0.3,
-                      mytitle = "", title_width = 60,
-                      mysubtitle = NULL,
-                      mycaption = NULL,
-                      int_digits = 0,
-                      slope_digits = 2,
-                      r2.digits = 2, 
-                      rmse.digits = 0,
-                      convert_rmse_r2_to_native_scale=F
-                      ) {
-  
-  #if label is left blank, use variable name
-  if(x.label == ""){x.label <- x.variable}
-  if(y.label == ""){y.label <- y.variable}
-  
-  data.wide <- data.wide %>% drop_na(x.variable, y.variable)  
-  
-  lm1 <- lm(formula(paste(y.variable, "~", x.variable)), data = data.wide)
-  #summary(lm1)
-  
-  
-  ################################################
-  ## ?? need this fns inside this fn???
-  #returns MSE
-  mse <- function(obs, pred){
-    mean((obs - pred)^2)
-  }
-  
-  rmse <- function(obs, pred){
-    sqrt(mean((obs - pred)^2))
-  }
-  
-  #returns MSE-based R2
-  r2_mse_based <- function(obs, pred) {
-    mse.est <- mse(obs, pred)
-    r2 <- 1- mse.est/mean((obs - mean(obs))^2)
-    max(0, r2)
-  }  
-  
-  ################################################ 
-  
-  
-  #rmse
-  if (convert_rmse_r2_to_native_scale==T) {
-    rmse <- rmse(obs = exp(data.wide[[x.variable]]), pred = exp(data.wide[[y.variable]])) %>% 
-      round(digits = rmse.digits)
-    
-    r2 <- r2_mse_based(obs = exp(data.wide[[x.variable]]), pred = exp(data.wide[[y.variable]])) %>%
-      round(r2.digits)
-    } 
-  
-  else {
-    rmse <- rmse(obs = data.wide[[x.variable]], pred = data.wide[[y.variable]]) %>% 
-    round(digits = rmse.digits)
-    
-    r2 <- r2_mse_based(obs = data.wide[[x.variable]], pred = data.wide[[y.variable]]) %>%
-      round(r2.digits)
-  }
-  
-  
-  fit.info <- paste0("y = ", round(coef(lm1)[1], int_digits), " + ", round(coef(lm1)[2], slope_digits), 
-                     "x \nMSE-R2 = ", r2,  
-                     "\nRMSE = ", rmse,
-                     "\nNo. Pairs = ", nrow(data.wide))
-  
-  max_plot <- max(max(data.wide[[x.variable]]), max(data.wide[[y.variable]]) )
-  min_plot <- min(min(data.wide[[x.variable]]), min(data.wide[[y.variable]]) )
-    
-  #compare  
-  p <- data.wide %>%
-    ggplot(aes(x= data.wide[[x.variable]], y= data.wide[[y.variable]])) + 
-    geom_point(alpha=alpha_value, aes(col = data.wide[[col.by]],
-                                      shape = data.wide[[shape.var]]
-    )) + 
-    coord_fixed() +
-    geom_abline(intercept = 0, slope = 1) +
-    #geom_smooth(aes(fill="loess")) +
-    geom_smooth(method = "lm", aes(fill="LS")) +
-    xlim(min_plot, max_plot) +
-    ylim(min_plot, max_plot) +
-    labs(title = #wrapper(
-      mytitle, width = title_width
-      #)
-      ,
-         subtitle = mysubtitle,
-         caption = mycaption,
-         x = x.label,
-         y = y.label,
-         col = col.by, 
-      shape = shape.var,
-         fill = "fit") +
-    annotate("text", -Inf, Inf, label = fit.info, hjust = 0, vjust = 1)
-
-  return(p)
-  
-}
-```
-
-* fn adds season indicator based on the date
-
-```{r}
-# fn adds sesason to a given dataset with a date variable. Uses typical equinox/solstice dates
-
-add_season <- function(dt, .date_var) {
-  
-  pacman::p_load(lubridate)
-  
-  # dt <- aqs_daily
-  # .date_var <- "Date.Local"
-  
-  winter <- "-12-21" #usually winter starts on 21st, sometimes on 22nd 
-  spring <- "-03-20"
-  summer <- "-06-21" #usually summer starts on 21st, sometimes on 22nd 
-  fall <- "-09-23" #usually fall starts on 22nd, sometimes on 23nd. Using 23rd for 2019 mobile monitoring campaign 
-  
-  dt <- dt %>%
-    rename(date_var = .date_var) %>%
-    #make sure variable is in date format
-    mutate(date_var = as.Date(date_var),
-           season = factor(ifelse((date_var >= ymd(paste0((year(date_var)-1), winter)) & date_var < ymd(paste0(year(date_var), spring))) |
-                                    date_var >= ymd(paste0(year(date_var), winter)), "winter",
-                                  ifelse(date_var >= ymd(paste0(year(date_var), spring)) &
-                                           date_var < ymd(paste0(year(date_var), summer)), "spring",
-                                         ifelse(date_var >= ymd(paste0(year(date_var), summer)) &
-                                                  date_var < ymd(paste0(year(date_var), fall)), "summer", 
-                                                ifelse( date_var >= ymd(paste0(year(date_var), fall)) &
-                                                          date_var < ymd(paste0(year(date_var), winter)), "fall", 
-                                                        NA)))), 
-                           levels = c("spring", "summer", "fall", "winter"))
-    )
-  
-  #change time variable back to what it was originally
-  names(dt)[names(dt) %in% "date_var"] <- .date_var
-  
-  return(dt)
-  
-}
-
-```
-
-
-* function for a standard boxplot with different whisker definitions to avoid plotting extreme/outlier points
-
-```{r, alt_boxplot fn, echo=T}
-#function takes df and returns summary statistics for plotting alternative boxplots with quantiles: 10, 25, 50, 75 and 90. this reduces the plotting of outliers, which are typically problematic when dealign with large datasets. 
-
-alt_boxplot <- function(df, var, min_q=0.025, max_q=0.975){
-  df <- df %>%
-    rename(var = var) %>%
-    
-    #calculate quantiles
-    summarize(
-      Qmin = quantile(var, min_q),
-      Q25 = quantile(var, 0.25),
-      Q50 = quantile(var, 0.50),
-      Q75 = quantile(var, 0.75),
-      Qmax = quantile(var, max_q)
-      )
-  
-  names(df)[names(df)==var] <- var
-  
-  return(df) 
-    
-}
-
-```
-
-```{r, mse r2, rmse}
-#returns MSE
-mse <- function(obs, pred){
-  mean((obs - pred)^2)
-  }
-
-rmse <- function(obs, pred){
-  sqrt(mean((obs - pred)^2))
-  }
-
-
-#returns MSE-based R2
-r2_mse_based <- function(obs, pred) {
-  mse.est <- mse(obs, pred)
-  r2 <- 1- mse.est/mean((obs - mean(obs))^2)
-  max(0, r2)
-  }  
-
-```
-
-```{r, facet_wrap_equal fn}
-# facet_wrap_equal() function acts like facet_wrap() in ggplot but it sets the axes ranges (min/max) of each facet to same scale so that the 1-1 line is always down the middle :D !!
-
-# code source: https://fishandwhistle.net/post/2018/modifying-facet-scales-in-ggplot2/ 
-
-FacetEqualWrap <- ggproto(
-  "FacetEqualWrap", FacetWrap,
-  
-  train_scales = function(self, x_scales, y_scales, layout, data, params) {
-    
-    # doesn't make sense if there is not an x *and* y scale
-    if (is.null(x_scales) || is.null(x_scales)) {
-        stop("X and Y scales required for facet_equal_wrap")
-    }
-    
-    # regular training of scales
-    ggproto_parent(FacetWrap, self)$train_scales(x_scales, y_scales, layout, data, params)
-    
-    # switched training of scales (x and y and y on x)
-    for (layer_data in data) {
-      match_id <- match(layer_data$PANEL, layout$PANEL)
-      
-      x_vars <- intersect(x_scales[[1]]$aesthetics, names(layer_data))
-      y_vars <- intersect(y_scales[[1]]$aesthetics, names(layer_data))
-      
-      SCALE_X <- layout$SCALE_X[match_id]
-      ggplot2:::scale_apply(layer_data, y_vars, "train", SCALE_X, x_scales)
-      
-      SCALE_Y <- layout$SCALE_Y[match_id]
-      ggplot2:::scale_apply(layer_data, x_vars, "train", SCALE_Y, y_scales)
-    }
-    
-  }
-)
-
-facet_wrap_equal <- function(...) {
-  # take advantage of the sanitizing that happens in facet_wrap
-  facet_super <- facet_wrap(...)
-  
-  ggproto(NULL, FacetEqualWrap,
-    shrink = facet_super$shrink,
-    params = facet_super$params
-  )
-}
-
-```
-
-```{r, variable_relabel fn}
-# relabels variable (pollutants) to include units and a clearer name for presentation purposes
-
-variable_relabel <- function(dt, var = "variable") {
-  dt <- dt %>%
-    rename(var=var) %>%
-    mutate(
-      var = recode_factor(factor(var),
-                          "co2_umol_mol" = "CO2 (ppm)",
-                          "ma200_ir_bc1" = "BC (ng/m3)",
-                          "neph_bscat" = "Neph (bscat/m)",
-                          "no2" = "NO2 (ppb)",
-                          "ns_total_conc" = "UFP_NanoScan (pt/cm3)",
-                          "pmdisc_number" = "UFP_DiSCmini (pt/cm3)",
-                          "pnc_noscreen" = "UFP_PTRAK (pt/cm3)",
-                          "pnc_screen" = "UFP_PTRAK_screened (pt/cm3)"
-                          )
-      )
-  
-  names(dt)[names(dt) == "var"] <- var
-  
-  return(dt)
-  
-}
-
-```
 
 
 # Instrumentation
@@ -1572,6 +1307,8 @@ ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
 
 ## Update data
 
+### --> also drop BC = 0 ng/m3? have ~ 7 estimates = 0
+
 * **drop median estimates outside the range of each instrument's reporting range**    
 * drop NanoScan and non-screened PTRAK values < 300 pt/cm3   
 * drop screened PTRAK values < 100 pt/cm3. there is one value of 2.0. All other readings are > 100 pt/cm3.
@@ -1995,8 +1732,7 @@ colo <- colo %>%
 
 * **things look good? would expect concentrations to increase as the day goes on if you depart early on, and the opposite to happen if you start in the afternoon**
 
-### --> see dropping red line for co2 on ~ 2019-03-13
-### --> why does pnc_screen only show a backup instrument for one time: 2019-03-22 ?
+* pnc_screen only show a trend line for a backup instrument on 2019-03-22, though these were two backup instruments (PMPTSCREEN_3 and PMPTSCREEN_94)
 
 ```{r, fig.height=12}
 p <- list()
@@ -2008,7 +1744,10 @@ for(i in seq_along(ap)) {
   
   p[[i]] <- colo %>%
     
-    filter(variable == ap[i]) %>% #View()
+    filter(variable == ap[i],
+           #only use rout data
+           grepl("R0", site)
+           ) %>% #View()
     
     group_by(variable, #instrument_id, 
              date) %>%
@@ -2133,17 +1872,6 @@ dt_stops4 %>%
          linetype="Instrument"
          )  
 }
-
-
-```
-
-
-### --> ? see values vs time, grouped by runname
-
-* check that instruments performed well over the duration of the study
-
-```{r}
-
 
 
 ```
@@ -2633,6 +2361,17 @@ neph_colos %>%
 
 * note that the screened PTRAKS were not all collocated, though we know that 93 and 94 were similar when they were unscreened, and that 94 and 3 were similar, thus we will assume that at least 3/4 of the instruments were in good agrement. We don't have any collocation information for PTRAK 2, which collected a substantial amount of data.
 
+## Resources
+
+**email from Jill Schulte** regarding instrument QC: 
+
+* "I think you'll find much of the information you're looking for on our Information For Air Monitoring Professionals webpage: https://ecology.wa.gov/Regulations-Permits/Guidance-technical-assistance/Information-for-air-monitoring-professionals. If you open the "Other Procedures" tree, the document "Air Monitoring Documentation, Data Review, and Validation Procedure" has general information about how we validate data, apply completeness criteria, and use 1-minute averages for validation. You'll also find more specific information in each of our standard operating procedures for specific pollutants. You can open the SOP trees for gases and particulate matter instruments on the same page, and most have a "Data Validation and Quality Assurance" section. 
+* We also rely heavily on EPA's Quality Assurance Handbook for Air Pollution Measurement Systems Volume II: https://www.epa.gov/sites/production/files/2020-10/documents/final_handbook_document_1_17.pdf. "
+
+*ideas    
+  * comapre instrument readings to nearby stops (i.e., stations in the same air shed)     
+    * this may be misleading in our case b/c we can smooth out 2-min/instant readings, which may correctly show very different readings?   
+
 
 
 # Final Data 
@@ -2687,16 +2426,24 @@ original_data %>%
 
 ## Save data 
 
-```{r, eval=F}
+```{r, eval=T}
 # median stop data 
-saveRDS(dt_stops4, file.path("Data", "Output", "stop_data.rda"))
+dt_stops4 %>%
+  #left_join(locations) %>%
+  saveRDS(., file.path("Data", "Output", "stop_data.rda"))
 
 # #second data
 ## no need to save this if nothing changes really
-# saveRDS(dt3, file.path("Data", "Output", "second_data.rda"))
+
+dt3 %>%
+  #left_join(locations) %>%
+  saveRDS(., file.path("Data", "Output", "second_data.rda"))
 
 # variables
-save(ap,       file = file.path("Data", "Output", "common_vars.rda"))
+save(ap,
+     #neph calibration curve from doe neph and PM2.5 data
+     doe_int, doe_slope,
+     file = file.path("Data", "Output", "common_vars.rda"))
 
 ```
 
