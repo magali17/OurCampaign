@@ -1632,6 +1632,8 @@ df %>%
 
 * **PMSCAN 3 has lower readings in 2020, but readings look OK for 2019**
 
+### --> ? labc data for PMPT_93 looks off part of the time - was a filter placed here? DROP ZERO DATA
+
 ```{r, fig.height=18}
 
 p <- list()
