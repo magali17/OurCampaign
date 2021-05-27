@@ -79,14 +79,14 @@ monitoring_area_shp <- read_sf(file.path("..", "GIS", "Shapefiles", "Monitoring"
 
 ```
 
-### --> calcualted PM2.5 from neph. do this for sec data as well?
+* calcualted PM2.5 from neph calibration curve. did this for the neph data as well.
 
 ```{r}
 sec <- sec0 %>%
   mutate(
     
     #use doe neph (bscat x10^4 values) and pm2.5 calibration curve to calc pm2.5 from our neph readings
-    value = ifelse(grepl("neph", variable), value*10^4*doe_slope + doe_int, value),
+    value = ifelse(grepl("neph", variable), value*10^4*slope + int, value),
     variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
     
     pollutant = variable,
@@ -100,7 +100,7 @@ stop_no <- stops0 %>%
 stops <- stops0 %>%
   mutate(
     #use doe neph (bscat x10^4 values) and pm2.5 calibration curve to calc pm2.5 from our neph readings
-    value = ifelse(grepl("neph", variable), value*10^4*doe_slope + doe_int, value),
+    value = ifelse(grepl("neph", variable), value*10^4*slope + int, value),
     variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
     
     day = wday(time,label = T, week_start = 1),
@@ -393,7 +393,7 @@ loc_sample <- stops %>%
 
 * note that ~ 24k rows of data are removed for plots on log10 x axes b/c values <=0 
 
-```{r}
+```{r,  fig.height=10}
 sec %>%
   ggplot(aes(x=value, col=location)) + 
   facet_wrap(~pollutant+ufp_range_nm, scales="free") + 
@@ -469,7 +469,7 @@ sec %>%
 
 * calculating a simple mean annual average using all the available site data 
 
--summary tables/plots 
+## summary tables/plots 
 
 ```{r}
 annual <- stops %>%
@@ -556,7 +556,7 @@ ufp_p <- str_subset(string =  unique_p$pollutant,
 ```{r, fig.height=18}
 #non-UFPs. each pollutant has its own legend
 
-p <- list()
+p <- list() 
 
 for(i in seq_along(non_ufp_p)) {
    #i=1

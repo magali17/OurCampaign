@@ -426,7 +426,7 @@ map0 +
   #monitoring area
   geom_sf(data = monitoring_area_shp, 
           #data = test, # monitoring_area_shp, 
-                aes(fill = "Monitoring Area"),
+                aes(fill = "Monitoring Area"), 
           inherit.aes = F,
 
           #reduce/eliminate outline

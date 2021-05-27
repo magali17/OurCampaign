@@ -289,6 +289,8 @@ dt0 <- left_join(dt0, run_stop_order)
 
 * calculate 2-min medians so instrument time stamps always line up
 
+*  dropped PMPT_94 when time >= "2019-04-18 11:48:00" & time < "2019-04-18 12:12:00" in LABC. Paper lab notebook states that this PTRAK had alcohol wick issues. Instrument 94 also reads higher than 93.
+
 ```{r}
 room_colo <- readRDS(file.path("Data", "Original", "room_colo.rda")) %>%
   ungroup() %>%
@@ -303,7 +305,11 @@ room_colo <- readRDS(file.path("Data", "Original", "room_colo.rda")) %>%
       paste0("PMPT_", c(2:4))
       ),
     # none of the screened ptraks were collocated. #c(2,94))
-    !grepl("PMPTSCREEN", instrument_id)
+    !grepl("PMPTSCREEN", instrument_id),
+    
+    # paper field notebook says that PMPT_94 had a wick issue around this time. the colloation data also shows that its readings were higher than PMPT93 for 6 readings (readings occurred every 2 sec)
+    !(instrument_id == "PMPT_94" & time >= "2019-04-18 11:48:00" & time < "2019-04-18 12:12:00"),
+    
         ) %>%
   #calculate 2-min medians
   mutate(time = floor_date(time, "2 mins")) %>% 
@@ -1307,11 +1313,13 @@ ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
 
 ## Update data
 
-### --> also drop BC = 0 ng/m3? have ~ 7 estimates = 0
-
 * **drop median estimates outside the range of each instrument's reporting range**    
 * drop NanoScan and non-screened PTRAK values < 300 pt/cm3   
-* drop screened PTRAK values < 100 pt/cm3. there is one value of 2.0. All other readings are > 100 pt/cm3.
+* drop screened PTRAK values < 100 pt/cm3. there is one value of 2.0. All other readings are > 100 pt/cm3.   
+
+### --> ? not doing currently: drop BC readings equal to 0 ng/m3 (~7 estimates). This doesn't happen in real life, but other instruments could have also had "0" readings
+
+ 
 
 ```{r}
 min_tot_ufp <- 300
@@ -1329,11 +1337,11 @@ dt_stops2 <- dt_stops %>%
   #drops 3 UFP values < 300
   filter(
     !(variable %in% c("ns_total_conc", "pnc_noscreen") & value < min_tot_ufp ),
-    !(variable %in% c("pnc_screen") & value < min_screen_ufp )
+    !(variable %in% c("pnc_screen") & value < min_screen_ufp ),
+    # #drop BC readings = 0
+    # !(variable %in% c("ma200_ir_bc1") & value == 0),
     )
   
- 
-
 
 #keep approved stop data, but see raw values
 dt2 <- dt_stops2 %>%
@@ -1632,7 +1640,22 @@ df %>%
 
 * **PMSCAN 3 has lower readings in 2020, but readings look OK for 2019**
 
-### --> ? labc data for PMPT_93 looks off part of the time - was a filter placed here? DROP ZERO DATA
+* PMPT 94 seems to have higher readings than PMPT 93 for 6 seconds. 94 readings are higher than surrounding readings, so this instrument is a) wrong, or b) placed near a source for a few seconds. There's no documentation for this?
+
+```{r, eval=F}
+# dt_stops3_colo_wide %>%
+#   drop_na(PMPT_93, PMPT_94) %>%
+#   filter(grepl("lab", site, ignore.case = T),
+#          runname == "2019-04-18_LABC",
+#          time < "2019-04-18 13:00:00"
+#          
+#          # PMPT_93 > 2000 & PMPT_93 < 5000,
+#          # PMPT_94 > 4000 & PMPT_94 <10000
+#          ) %>% 
+#   select(runname:variable, contains("PMPT_"),) %>% View()
+
+```
+
 
 ```{r, fig.height=18}
 
@@ -2017,6 +2040,7 @@ doe_neph_calib <- doe %>%
 
 ```{r}
 #plot takes long time to run
+print("black line is best fit line; blue line is smooth fit")
 
 doe_neph_calib %>%
   ggplot(aes(y=PM2.5, x=Neph)) + 
@@ -2032,9 +2056,13 @@ doe_neph_calib %>%
 
 ```
 
+* this slope is similar to Cooper's when we adjust his calibration curve, which uses bscat x 10^-5, to to bscat x 10^-4.
 
 ```{r}
+
 doe_lm <- doe_neph_calib %>%
+  #changing the units changes the slope estimate, but not the intercept
+  #mutate(Neph = Neph*10) %>% 
   lm(PM2.5~Neph, data=.) 
 
 doe_lm %>% summary()
@@ -2045,22 +2073,23 @@ doe_slope <- tidy(doe_lm)$estimate[tidy(doe_lm)$term=="Neph"]
 ```
 
 
-### --> use doe calibration curve instead of ours since this is at the minute level? otherwise need to update calibration curve when Dave updates this.
+### --> if we use need to update calibration curve when Dave updates this.
 
 * using doe neph-pm2.5 calibration at three AQS sites since    
   * these are at the minute level
   * there are a lot of pairs?
 
-```{r}
+```{r, echo=T}
 #convert bscat ___/m to PM2.5 ug/m3 
 
 #estimates from Cooper's work. this will be updated based on what Dave Slager finds.
-# int <- 1.060539
-# slope <- 2.509793 #*10
+int <- 1.060539
+# slope was for bscat x 10^-5, whereas here bscat is x 10^-4
+slope <- 2.509793 *10
 
 # estimates from DOE data (see above)  
-int <- doe_int
-slope <- doe_slope
+# int <- doe_int
+# slope <- doe_slope
 
 ```
 
@@ -2443,8 +2472,8 @@ dt3 %>%
 
 # variables
 save(ap,
-     #neph calibration curve from doe neph and PM2.5 data
-     doe_int, doe_slope,
+     #neph calibration curve to be used  
+     int, slope,
      file = file.path("Data", "Output", "common_vars.rda"))
 
 ```
