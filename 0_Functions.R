@@ -253,6 +253,7 @@ variable_relabel <- function(dt, var = "variable") {
       #ufp_range_nm = factor(ufp_range_nm, levels = c("10-700", "10-420", "20-1,000", "50-1,000")),
       
       var = recode_factor(factor(var),
+                          "co_ppm" = "CO (ppm)",
                           "co2_umol_mol" = "CO2 (ppm)",
                           "ma200_ir_bc1" = "BC (ng/m3)",
                           "neph_bscat" = "Neph (bscat/m)",
@@ -267,7 +268,9 @@ variable_relabel <- function(dt, var = "variable") {
                                    "BC (ng/m3)", 
                                    "UFP (pt/cm3)", #, 10-700 nm (pt/cm3)", "UFP, 10-420 nm (pt/cm3)", "UFP, 20-1,000 nm (pt/cm3)", "UFP, 50-1,000 nm (pt/cm3)",
                                    "NO2 (ppb)",
-                                   "CO2 (ppm)"
+                                   "CO2 (ppm)", 
+                                   
+                                   "CO (ppm)"
                                    )
                    
                    ),

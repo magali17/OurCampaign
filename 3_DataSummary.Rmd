@@ -39,7 +39,10 @@ pacman::p_load(knitr, kableExtra,
                ggrepel, #avoid overlapping labels
                units, #convert between e.g., m to km
                #time series data 
-               lubridate
+               lubridate,
+               
+               fmsb #, #percentile()
+               #GGally #ggpairs()
                )    
  
 
@@ -49,6 +52,8 @@ set.seed(1)
 
 
 # Upload data
+
+###--> add uncalibrated data/other data for sensitivity analyses 
 
 ```{r}
 #functions
@@ -239,7 +244,7 @@ notes
   
 * **boxplots whiskers are for quantiles 2.5 and 97.5** 
 
-### --> NanoScan (10-420 nm) has higher readings than discmini (10-700 nm)?
+* NanoScan (10-420 nm) has higher readings than discmini (10-700 nm) b/c it is more efficient at measuring the smallest particles due to the difference in technologies. The Nanoscan measures optical diameter after alcohol condensation to grow the particles, whereas the disk-mini measures electrical mobility diameter based on the current produced when the particles are captured on a oppositely charged surface.  The electrostatic method has lower detection efficiencies for these very small particles than does the condensation/optical method.
 
 by month 
 
@@ -389,7 +394,7 @@ loc_sample <- stops %>%
  
 # Raw data
 
-### --> look at this? note that data are not cleaned for use at the second level
+### --> see IQR since data is not super clean for analyses at this level
 
 * note that ~ 24k rows of data are removed for plots on log10 x axes b/c values <=0 
 
@@ -466,8 +471,12 @@ sec %>%
 
 # Annual averages
 
-
 * calculating a simple mean annual average using all the available site data 
+
+### --> also do this w/ uncalibrated data (? & zero data?) & compare annual averages  
+
+### --> * also calculated the diff between non-screened and screened PTRAKs.   
+  * the MOVUP study saw that 10-20 nm particles were associated with the airport
 
 ## summary tables/plots 
 
@@ -521,7 +530,132 @@ annual %>%
 
 ```
 
+
+* matrix scatterplots comparing all pollutants to eachother
+
+### --> GGally::ggpairs() doesn't work? 
+
+```{r, fig.height=10}
+
+annual %>%
+  select(variable, location, value) %>%  
+  spread(variable, value) %>% 
+  select(-location) %>%
+  
+  #GGally::ggpairs()
+  plot(., )
+  
+
+
+```
+
+
+* scatterplot comparison of PM2.5 vs other pollutant annual averages, using standardized values 
+
+```{r, fig.height=12}
+#note: could also use percentiles or regular scale
+
+#make PM2.5 ref (x-axis) variable
+y_vars <- setdiff(unique(annual$variable), "pm2.5_ug_m3")
+
+annual %>%
+  select(-c(pollutant, ufp_range_nm)) %>%
+  
+  #standardize values to plot them on the same scale
+  group_by(variable) %>%
+  mutate(
+    #standardize values: (x-mean)/SD
+    value = scale(value)
+    # # alternative is to calculate percentiles     
+    # value = percentile(value) 
+         ) %>%  
+  
+  spread(variable, value) %>% 
+  gather(variable, value, y_vars) %>% 
+  #add cleaner labels
+  variable_relabel(var = "variable") %>% # View()
+  
+  ggplot(aes(x=pm2.5_ug_m3, y=value, #col=variable, 
+             col=ufp_range_nm, 
+             linetype=ufp_range_nm #size = ufp_range_nm
+             )) +
+  
+  geom_abline(slope = 1, intercept = 0, alpha=0.5) +
+  geom_point(alpha=0.2) + 
+  geom_smooth(se=F) +
+  stat_cor(method = "pearson", 
+           #only show R value, not p-val
+           aes(label = ..rr.label..),
+           #doesn't work??
+           #r.accuracy = 0.01
+           ) +
+  
+  #make x-y axis same
+  facet_wrap_equal(~variable) +
+  theme(aspect.ratio = 1) +
+  
+  labs(
+    title = "Comparison of standardized annual averages at N=309 sites",
+    y = "Other Pollutant Standardized Value",
+    x = "PM2.5 Standardized Value",
+    linetype = "UFP Size Range",
+    col= "UFP Size Range",
+    subtitle = "showing pearson R2" 
+        )
+
+```
+
+* scatterplot comparison of different UFP instruments 
+
+```{r}
+#make NanoScan ref instrument
+y_vars_ufp <- setdiff(unique(annual$variable[grepl("UFP", annual$pollutant)]), "ns_total_conc")
+
+annual %>%
+  #only look at UFPs
+  filter(grepl("UFP", pollutant)) %>%
+  
+  select(-c(pollutant, ufp_range_nm)) %>%
+  spread(variable, value) %>% 
+  gather(variable, value, y_vars_ufp) %>% 
+  #add cleaner labels
+  variable_relabel(var = "variable") %>%  
+  
+  ggplot(aes(x=ns_total_conc, y=value, 
+             col=ufp_range_nm, 
+             )) +
+  geom_abline(slope = 1, intercept = 0, alpha=0.5) +
+  geom_point(alpha=0.2) + 
+  geom_smooth(se=F) +
+  stat_cor(method = "pearson", 
+           #only show R value, not p-val
+           aes(label = ..rr.label..),
+           ) +
+  #make x-y axis same
+  facet_wrap_equal(~variable) +
+  theme(aspect.ratio = 1) +
+  
+  labs(
+    title = "Comparison of standardized annual averages at N=309 sites",
+    y = "Other UFP Conc (pt/cm3)",
+    x = "NanoScan (10-420 nm) Conc (pt/cm3)",
+    col= "UFP Size Range",
+    subtitle = "showing pearson R2" 
+        )
+```
+
+
+### --> compare UFPs (x) to other instruments
+
+```{r}
+
+```
+
+
+
+
 ## Maps 
+
 
 ```{r}
  
@@ -613,6 +747,8 @@ ggarrange(plotlist = p, ncol = 2, nrow = 2)
 
 * UFP predictions seem to vary substantially depending on what instrument was used?    
   * note, people wouldn't normally use screened PTRAKS (50-1,000 nm particles) to measure "UFPs"
+
+### --> plot UFPs as percentiles: percentile(). or standardized values?
 
 ```{r, fig.height=18}
 #UFPs. these share the same legend

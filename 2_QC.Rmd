@@ -18,22 +18,118 @@ editor_options:
 
 **Purpose**:   
 
-* This script documents the quality control procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. 
+* This script documents the quality control (QC) procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. 
 
-**Approach**  
+**QC Steps** 
 
-* We check that calibrations and particle instrument zeroing occurred     
-* Instrument error checks: _____    
-* Unit of analysis: Data are cleaned up at the stop level (2-minute median concentration) rather than the second level since that is our unit of analysis. Finer, second data can be a lot more variable and have a lot more extreme values. If your interest is in using these data at the second level, additional analyses may be necessary.    
-* At the stop level, we investigate the times when we observed extreme pollutant values (i.e., the lowest and highest readings). We do so by comparing these against other instruments to check that concentration patterns were similar.      
-* To assess instrument precision, we compare collocated instrument readings in the field and in the lab   
-* Based on the stop-level analyses, we drop bad readings from the dataset  
-* We check that there are no instrument time trends (i.e., that there is no concentration "drift" as a function of an instrument's operating time)    
-* To assess stop concentration accuracy, we compare the readings from the mobile monitoring campaign against readings from AQS site collocations   
+* downloaded data sources:    
+  * mobile monitoring data for all pollutants (9): CO, CO2, BC, Nephelometers, NO2, UFPs (4 measures)       
+  * DOE minute (non-validated) and hourly (validated) data for various pollutants: BC, NO2, Neph, PM2.5, CO
+  
+* gas calibrations   
+  * instruments readings were adjusted after a gas calibration until the next calibration was done (i.e., calibrations were for specific time periods)   
+  * all calibrations used the reference concentration as the independent variable, and "calibrated" measurements were estimated after solving for this covariate      
+  * calibrations were based on the median instrument reading of a reference concentration (i.e., a few minutes worth of data) using steady instrument readings (e.g., after applying time delays) 
+  * nothing was done for these insruments, which were reset after calibration:    
+    * CO, Nephs  
+  * normal calibrations were done for   
+    * CO2, NO2_1 
+  * NO2_2 instrument was calibrated using a no intercept model since instruments were resent after zero readings and thus, these should have been failry close to the true concentration    
 
-**Results** 
+* zero concentrations   
+  * checked that particle instruments reported near zero readings during zero air checks   
+  * checked that these zeros were not drifting (i.e., becoming less accurate) over time 
 
-### --> resuls summary 
+* checked that aethalometer attenuation as < 50% at all times. This is when the instrument is most sensitive to detecting concentration changes.  
+
+* calculated site concentration medians. All subsequent analyses were done at the stop-level. 
+
+* dropped untrustworthy site medians:   
+  * readings outside the range of each instrument's reporting range   
+  * NanoScans and non-screened P-TRAKS readings < 300 pt/cm3 
+  * screened P-TRAKS readings < 100 pt/cm3
+  
+* inspected time series data during times when extreme instrument concentrations (min & max conc) were observed. Readings were compared against other instrument readings (i.e., were other instruments also reporting elevated levels?)   
+  * __[delete note here since this instrument is fully dropped later?]__ dropped one instance of CO2_19 (backup instrument) readings when readings were dissimilar from other instruments   
+
+* compared & calibrated collocated duplicate instruments 
+  * since the two screened P-TRAKS that collected most of the data were not collocated, we plotted density curves to show that their distribtuions were similar 
+  * we calibrated some duplicate instruments a second time:    
+    * instruments were not recalibrated to eachother if:      
+      * there was a primary instrument used in the campaign the majority of the time and backup instruments produce similar readings during collocations    
+        * unscreened P-TRAKs   
+        * nephs   
+        * BC
+      * other reasons for not recalibrating instruments:   
+        * the screened PTRAKs were not calibrated since only two backup instruments were collocated (3 and 94), and both were in good agreement    
+        * CO instruments since none were in agreement with eachother (unclear which is the better/approariate reading)       
+        * CO2 since the backup instrument was dropped         
+    * if there was no primary instrument, however, readings were calibrated to the average of both instruments based on their collocations    
+      * discminis   
+    * calibrate backup instruments when they deviate from the primary instrument using recent collocation data
+      * calibrate NanoScan (ns) 3 to ns 5 using data collected before __2019-04-01__ since 3 tends to read low and ns 3 values after this were not used anyways    
+      * calibrate NO2_1 to NO2_2 using data collected before __2019-07-01__.     
+        * Note that some NO2_1 values become negative    
+    
+* calibrated neph readings to estimate PM2.5 using Copper's calibration curve
+
+* checked that there were no instrument trends occurring over the course of a samplign day (e.g., increasing instrument readings imply as a funciton of time)   
+
+* AQS data comparisons   
+  * checked that Copper's calibration curve was similar to the one fit using DOE data for 2016. Estimates would thus be similar regardless of what curve was used.
+  
+  * see AQS section for details on the discrepancies between these two curves 
+  
+  * compared 2-min mobile monitoring estimates to 2-min AQS site estimates 
+
+* dropped all CO data because it they did not correlate well across duplicate instruments or with DOE data.
+
+**Observations** 
+
+* data sources
+  * DOE seemed to be genrally complete (e.g., ~60 minute readings/hr). Minute data were associated with hourly readings, though they were more variable.    
+  * Most pollutants used a "primary" instrument to measure pollutants. An exception waws the discminis and the screened ptraks.        
+* Pollutants were measured for similar durations of time throughout the study period (~264 days avg)
+
+* gas calibrations    
+  * gas calibrations were calculated using lags - the data collected between t0+5 min and t1-1min, where t0=reference conc start time, and t1= reference conc end time.
+  * CO2 and NO2 instruments were genrally in good agreement with reference concentrations. CO instruments showed variable performance. 
+
+* zero concentrations       
+  * particle instruments generally reported readings near 0 during zero checks, though there was some variability. The NanoScans tended to report readings in the hundreds of pt/cm3.         
+
+* aethalometer attenuation    
+  * all aethalometer readings were < 50% 
+
+* extreme instrument readings   
+  * most readings looked fine - similar concentration patterns were observed across multiple instruments   
+  * CO2_19, however, tended to report high readings that were different than other instruments    
+  * BC and CO tended to report low concentration readings  
+  
+* instrument collocations   
+  * most looked good, except for CO2_19 and CO instruments  
+    * CO2_19 (backup instrument) reported some readings much higher than CO2_14
+    * CO instruments were in poor agreement with eachother 
+  * NO2_1  (backup instrument) tended to read higher than NO2_2
+  * PMSCAN_3  (backup instrument) tended to read lower than PMSCAN_5 
+  
+* there were no large trends in instrument readings as a function of how long the instrument had been collecting data for  
+
+* dropped duplicate pollutant readings from duplicate instruments being placed on the platform. If multiple instruments were on the platform...   
+  * and a primary instrument was used, used readings from the primary instrument
+  * and both instruments were backups, used:
+    * PTRAK 94 (instead if PTRAK 3), since this was used unscreend & has good agreement with other instruments
+    * CO_190134 (instead of CO_3), since it had better agrement (R2) with CO_1 
+ 
+* AQS data comparisons   
+
+    * Copper's calibration curve was similar to the one fit using DOE data for 2016   
+
+  * 2-min mobile monitoring and DOE estimates were similar for BC, Neph bscat, NO2 and PM2.5. CO estimates had poor correlation. 
+  
+  * mobile monitoring estimates of site annual averages were decent (?) for BC and NO2. There was limited variation in nephelometer readings, making it difficult to assess correlation.  Mobile monitoring estimates of PM2.5 were generally lower than true concentrations. Mobile monitoring estimates of CO were much higher than true concentrations. 
+
+* not including CO, which as excluded from this analysis as a whole, about 9% of the stop data were dropped based on the QC procedures outlined above. 
 
 
 ```{r setup, include=FALSE}
@@ -56,6 +152,7 @@ if (!is.null(sessionInfo()$otherPkgs)) {
 pacman::p_load(knitr, kableExtra, 
                ggpubr, tidyverse,
                ggrepel, #geom_label_repel
+               ggpmisc, #stat_poly_eq() # adds lm text to ggplots
                #mapping...adding scales, N arrows
                ggmap, sf, ggspatial, 
                units, #convert between e.g., m to km
@@ -88,6 +185,8 @@ pt_pollutants <- c("PM", "BC")
 
 #air pollutants of immediate interest
 ap <- c(
+  #CO
+  "co_ppm",
   #CO2
   "co2_umol_mol",
   #aethalometer
@@ -110,6 +209,9 @@ unique_routes <- paste0("R0", c(1:9))
 drop_instruments <-  c(paste0("PMPT_", c(1,2,4)),
                                paste0("PMPTSCREEN_", c(1,4))
 )
+
+gas_calibrated <- c("co_ppm", "co2_umol_mol", "neph_bscat", "no2")
+
 ```
 
 ## helper tables
@@ -118,23 +220,21 @@ drop_instruments <-  c(paste0("PMPT_", c(1,2,4)),
 #imports, fieldnotes, and location tables
 load(file.path("Data", "Original", "imports_fieldnotes_location_tables.rda"))
 
-calibrations <- readRDS(file.path("Data", "Original", "lab_calibrations_in_fixed_rooms.rda")) %>%
-  mutate(date = ymd(substr(time, 1, 10))) %>%
+```
+ 
+```{r}
+#will mege these later after adding a lag period to tables
+calibrations_table0 <- readRDS(file.path("Data", "Original", "calibrations_table.rda"))
+room_calibrations_data <- readRDS(file.path("Data", "Original", "room_calibrations_data.rda")) %>%
   filter(
-    #not sure why tim measured these  
-    !analyte %in% c("no, nox"),
     # only keep instrument readings we're interested in
     variable %in% ap,
     #drop instruments w/ few readings (only want a primary and backup instrument)
-    !instrument_id %in% drop_instruments
-  ) %>%
-  
-  #drop analyte since this is sometimes wrong (Amanda); other variables make duplicate rows - due to merging issue earlier?
-  select(-c(analyte, id, import_id, level)) %>%
-  distinct() %>%
-  drop_na(instrument_id, variable, value)
+    !instrument_id %in% drop_instruments,
+  )
 
 ```
+
 
 ## stop data
 
@@ -176,41 +276,7 @@ dt0 <- dt0 %>%
 
 
 # DUPLICATE ROWS??
-# There ~ 15k rows w/ duplicate information other than the value column. Looks like co_14 (the primary CO2 instrument) was primarily responsible for this - it reported duplicate readings at any given time. Duplicate readings appear to be very similar. Was this related to an instrument logging issues?? We'll average over these.
-
-#dt0 %>% select_at(vars(-value)) %>% distinct() %>% nrow() #6283650
-  
-# dt0 %>% 
-#   select(location, time, instrument_id, value) %>% 
-#   
-#   slice(2974420, 2974421, 4056517, 4056518, 4056523, 4056524, 4056529, 4056530, 4056535, 4056536, 4056541, 4056542, 4056549, 4056550 , 4056555, 4056556, 4056561, 4056562, 4056567, 4056568, 4056573, 4056574, 4056579, 4056580, 4056585, 4056586, 4056591, 4056592, 4056597, 4056598, 4056603, 4056604, 4056611, 4056612, 4056617, 4056618, 4056623, 4056624, 4056629, 4056630, 4056635, 4056636
-# , 4056641, 4056642
-# , 4056647, 4056648
-# , 4056653, 4056654
-# , 4056659, 4056660
-# , 4056665, 4056666
-# , 4056673, 4056674
-# , 4056679, 4056680
-# , 4056685, 4056686
-# , 4056691, 4056692
-# , 4056697, 4056698
-# , 4056703, 4056704
-# , 4056709, 4056710
-# , 4056715, 4056716
-# , 4056721, 4056722
-# , 4056727, 4056728
-# , 4056735, 4056736
-# , 4056741, 4056742
-# , 4056747, 4056748
-# , 4056753, 4056754
-# , 4056759, 4056760
-# , 4056765, 4056766
-# , 4056771, 4056772
-# , 4056777, 4056778
-# , 4056783, 4056784
-# , 4056789, 4056790
-# , 4056797, #4056
-#         ) %>% View()
+# There ~ 15k rows w/ duplicate information other than the value column. Looks like co_14 (the primary CO2 instrument) was primarily responsible for this - it reported duplicate readings at any given time. Duplicate readings appear to be very similar. Was this related to an instrument logging issues?? We'll average over these
   
    
 dt0 <- dt0 %>% 
@@ -219,10 +285,10 @@ dt0 <- dt0 %>%
   summarize(value = mean(value)) %>% 
   ungroup()
 
-dt0_w <- dt0 %>%
-  select(-c(variable, primary_instrument)) %>%
-  spread(instrument_id, value) %>%
-  arrange(time)
+# dt0_w <- dt0 %>%
+#   select(-c(variable, primary_instrument)) %>%
+#   spread(instrument_id, value) %>%
+#   arrange(time)
   
 ```
 
@@ -235,53 +301,21 @@ instruments <- unique(dt0$instrument_id) %>%
 
 ```
 
- 
-```{r, eval=F}
-# don't add stop_route_no since results in sites w/ missing visited number?
+MA200 data for QC
 
-#sequence of stop order based on a run. Using runs after the campaign had run for a while, since some changes happened early on. The resulting numbering should be mostly accurate for the rest of the campaign.
+```{r}
+ma200 <- readRDS(file.path("Data", "Original", "ma200_data.rda")) %>%
+  mutate(date = ymd(substr(time, 1, 10))) %>%
+  filter(
+    # # only keep instrument readings we're interested in
+    # grepl("ma200_uv", variable),
+    #this location was only visited once
+    location != "MS0398"
+  ) %>%
+  drop_na(value) %>%
+  distinct()
 
-first_run <- dt0 %>%
-  #don't consider initial runs
-  filter(date > ymd("2019-04-01"),
-         location != "MS0000"
-         ) %>%  
-  
-  group_by(site) %>%
-  filter(time == min(time)) %>% 
-  ungroup() %>%
-  distinct(runname) %>% pull()
-  
-run_stop_order <- dt0 %>%
-  #only keep first run of each route
-  filter(runname %in% first_run,
-         location != "MS0000"
-         ) %>%
-  
-  group_by(runname, location) %>%
-  mutate(arrival_time = min(time)) %>% 
-  ungroup() %>%
-  distinct(runname, location, arrival_time) %>% 
-  group_by(runname) %>%
-  #number stop order within each day
-  mutate(run_stop_no = row_number(),
-         run_stop_no = str_pad(run_stop_no, width = 2, side = "left", pad = "0")
-         ) %>%
-  ungroup() %>%
-  select(location, run_stop_no)
-
-#unique(dt0$run_stop_no)
-
-#dim(left_join(dt0, run_stop_order))
-
-# add stop order within a route
-dt0 <- left_join(dt0, run_stop_order)
-
-# # how many sites have NAs (location not visited within that runname)
-# dt0 %>%
-#   filter(is.na(run_stop_no)) %>%
-#   distinct(location) %>%
-#   nrow()
+#unique(ma200$variable)
 
 ```
 
@@ -325,18 +359,6 @@ room_colo <- readRDS(file.path("Data", "Original", "room_colo.rda")) %>%
 ```
 
 
-
-```{r, eval=F}
-# what room data do we have?
-room_colo %>%
-  distinct(date, variable, instrument_id) %>%  
-  ggplot(aes(x=date, y=instrument_id, col=variable)) + 
-  geom_point() + 
-  geom_vline(xintercept = ymd(end_date))
-  
-```
-
-
 ## DOE 
 
 ```{r, eval=F}
@@ -372,7 +394,6 @@ drop_doe_vars <- c(
 
 doe <- doe0 %>%
   rename(location_doe=site) %>%
-  
   filter(
     #don't need Tacoma site - no collocation here
     location_doe != "AQSTAC",
@@ -386,7 +407,7 @@ doe <- doe0 %>%
     #time = ymd_hms(time, tz = mytz),  
     
     date = ymd(substr(time, 1, 10)),
-    #crosswalk for our location IDs
+    #crosswalk for our location calib_instrument_ids
     location = recode_factor(factor(location_doe),
                              #10th & Weller
                              "AQS10W" = "MC0120",
@@ -411,11 +432,14 @@ doe <- doe0 %>%
     pollutant = ifelse(grepl("_no", variable), "NO2", 
                             ifelse(grepl("pm25", variable), "PM2.5",
                                    ifelse(grepl("neph", variable), "Neph",
-                                          ifelse(grepl("_bc_", variable), "BC", NA)
+                                          ifelse(grepl("_bc_", variable), "BC", 
+                                                 ifelse(grepl("trace_co", variable), "CO", 
+                                                 NA)
                                           )
                             )
-                            ),
-    pollutant = factor(pollutant, levels = c("BC", "NO2", "Neph", "PM2.5"))
+                            )
+                       ),
+    pollutant = factor(pollutant, levels = c("BC", "NO2", "Neph", "PM2.5", "CO"))
     
   )   
 
@@ -504,10 +528,9 @@ df %>%
 
 df %>%
   #pollutants with true minute values
-  filter(pollutant %in% c("BC", "NO2", "Neph")) %>%
+  filter(pollutant %in% c("BC", "NO2", "Neph", "CO")) %>%
   
   ggplot(aes(x=hour_val, y=value)) + 
-  #facet_grid (location_doe~pollutant, scales="free") + 
   facet_wrap_equal(pollutant~location_doe, scales="free") + 
   geom_bin2d() +
   geom_abline(slope = 1, intercept = 0, linetype="dashed", aes(col="1-1")) + 
@@ -669,8 +692,6 @@ doe2 %>%
 
 # Instrumentation
 
-Instrument notes
-
 * extreme instrument readings outside the range. Individual spikes may indicate poor instrument performance, but sustained spikes may be true though they may have reduced accuracy. Taking median stop concentrations and dropping median concentrations outside the range of the instrument readings should address these ideas?
 
   - from Tim G: "Not only the magnitude of the reading matters, but also the duration of the extreme value readings.  Instrument readings that are outside the manufacturers' rated range are best omitted from the data set, especially if they are one-time spikes.   A sustained extreme reading suggests that a high level of the pollutant has been detected but the quantity may not be very reliable.  You might consider replacing the numeric levels that exceed the manufacturers' rated maximum with that maximum number for sustained exceedances, on the premise that the device isn't made to measure higher than the stated level."
@@ -679,14 +700,16 @@ Instrument notes
 
 * There were no clock issues with either NanoScan.  The clock issues were primarily with the P-Traks, but the resetting of internal clock before every drive kept the clock drift to a minimum.  After ~6 hrs, the clock for the instrument might be off by 2 to 3 sec. 
 
+* Tim L: "The Nanoscan measures optical diameter after alcohol condensation to grow the particles, whereas the disk-mini measures electrical mobility diameter based on the current produced when the particles are captured on a oppositely charged surface. The electrostatic method has lower detection efficiencies for these very small particles than does the condensation/optical method."
+
 ```{r}
 instrument_range <- dt0 %>%
   distinct(variable) %>%
   mutate(
-    Min = c(0, 0, 0, 10^3, 0, 10^2, 0, 0),
+    Min = c(0, 0, 0, 10^3, 0, 0, 0, 10^2, 0),
     #no max for neph
-    Max = c(5e3, 2e3, 5e5, 10^6,NA, 10^6, 10^6, 5e5),
-    Units = c("ppm", "ppb", "pt/cm3", "pt/cm3", "bscat/m", "pt/cm3", "ng/m3", "pt/cm3")
+    Max = c(200, 5e3, 2e3, 10^6, 5e5, 10^6, NA, 10^6, 5e5),
+    Units = c("ppm", "ppm", "ppb", "pt/cm3", "pt/cm3", "ng/m3", "bscat/m", "pt/cm3",  "pt/cm3")
     
   )
   
@@ -748,226 +771,782 @@ dt0 %>%
 
 # Quality Assurance 
 
-## Calibrations
+## Gas Calibrations
 
-* I think the "level" column is what the instrument read, while the conc column is the true concentration during a calibration procedure. 
+* The "level" column is what the instrument read, while the conc column is the true concentration during a calibration procedure. 
 * pm25 is nephelometer readings 
 
 * **NOTE**: don't use the "analyte" column, which is wrong for some instruments (Amanda confirmed this). Use instrument_id column.
 
-```{r}
-# NOTE: don't use "analyte" column, which is wrong for some instruments??
+* CO: Tim G: tried resetting the instrument but had issues…so team just noted the response to the span gas. Both langans didn’t respond well. 
 
-calibrations %>%
-  #one record per calibration attempt
-  distinct(date, instrument_id) %>%  
-  #number of times each instrument was calibrated
-  group_by(instrument_id) %>%
+* see a lag that occurs in instrument response to a true reference concentration when looking at time series plots. need to add a lag to start and end of each refernce reading.
+
+* nephs were reset based on the zero and span gas inputs if the readings were found to be out of spec (defined as more than +-0.05 e-5 away from the reference B-scat values). These were based on manual entries (not in the database as of 6/11/21). These manually recorded  calibration values could be just as valuable as the other calibration event results (logged and in the database on a 10-sec resolution).    
+  * **Whether or not you may choose to calibrate earlier readings may depend on how much the nephs drifted away from the "true" concentration since the previous time it was calibrated and rest.** "As found" neph readings are pre-calibration and could be used to adjust neph readings during earlier times; whie "as set" neph readings are post-calibration after the instrument has been resest such that we trust that the instrument is within spec (+-0.05e-5).    
+  * Amanda and I decided not to recalibrate neph readings backwards since these calibration data were collected in a different fashion as the rest of the data in the database.  We are also not doing this with other instruments. Amanda will summarize these calibration data in the QC documenet she is working on.
+
+```{r}
+# time series 
+calib_instrument_ids <- room_calibrations_data %>%
+  filter(grepl("co_|co2|no2|neph_bscat", variable, ignore.case = T)) %>%
+  distinct(instrument_id) %>%
+  pull() %>% sort()
+
+```
+
+* **all readings, before adding a lag to when instruments start reading**
+
+```{r, fig.height=8}
+# no lag
+start_lag <- 0
+end_lag <- 0
+
+calibrations <- calibrations_table0 %>%
+  #drop these data so not confused w/ no2 when merging
+  filter(!analyte %in% c("nox", "no")) %>%
+    #some instruments (esp NO2) have a lag response period. wait a few seconds before using the data
+    mutate(timeint = timeint + start_lag,
+           endtime = endtime-end_lag
+           ) %>%
+    #one time gets dropped. there is an error/instrument restart note.
+    filter(timeint < endtime) %>%
+  
+  #is this causing merging issues, import id's are different for 2 diff types of files
+  select(-c(import_id, #id
+            )) %>%
+  distinct() %>%
+  
+  #make calibration table long format
+    rowwise() %>%
+    mutate(time = list(seq(timeint, endtime, 1))) %>%
+    ungroup() %>%
+    select(-timeint, -endtime) %>%
+    unnest(cols=c(time)) %>%
+    arrange(time) %>% #View()
+    
+#join actual instrument readings
+  left_join(room_calibrations_data) %>%
+  drop_na(value)
+
+
+```
+
+```{r}
+p <- list()
+
+for(i in seq_along(calib_instrument_ids)) {
+  #i=8
+  #if there are data for this instrument..
+  obs <- calibrations %>%
+    filter(instrument_id == calib_instrument_ids[i]) %>%
+    nrow()
+  
+  if(obs > 0) {
+    p[[i]] <- calibrations %>%
+      filter(instrument_id == calib_instrument_ids[i]) %>%
+      gather(kind, value, conc, value) %>%
+      mutate(
+        kind = recode_factor(factor(kind),
+                             "conc" = "Reference",
+                             "value" = "Instrument"
+                             )
+        ) %>%
+      
+      ggplot(aes(x=time, y=value, col=kind,  
+                 )) + 
+      facet_wrap(~instrument_id + runname, scales="free") + 
+      geom_point(alpha=0.1) +
+      
+      guides(colour = guide_legend(override.aes = list(alpha = 1))) +
+      
+      labs(title = "calibration readings"
+           )
+    
+    print(p[[i]])
+  }
+  }
+
+
+```
+
+* **after adding a lag** 
+
+  * Note that this drops  a lot of data but the instruments took a while to stabilize. Questions about their reliability for 2-min stops...? 
+  
+* We still see a very unstable reading for NO2_2 on 2019-04-15 ~ 13:00. There are no notes explaining this in the calibration notebook. It looks like the refernce concentration jump from 0 ppb to 80 ppb may have been too large for the NO2_2 instrument, particularly if it was not warmed up for long prior to doing so. Note, this was also the first in lab NO2 calibratiobn for our campaign, so we may have still been learning how to properly calibrate the instrument. The instrument starts to stabilize ~ 45 min into the 80 ppb session, but then falls again. Readings are more in line with other reference concentrations afterwards. **We will drop the 80 ppb reference concentration b/c the jump in concentration may have been too much for the instrument, particulalry if the instrument was not warmed up.** There's an argument to be made for also dropping the first 0 reading, but it shouldn't make a difference since the our calibration curves won't take that into account.
+
+```{r, echo=T}
+# add a lag
+start_lag <- 300 #5 min
+end_lag <- 60 # 1 min
+
+```
+
+```{r, test, eval=F}
+test <- calibrations_table0 %>%
+  
+  filter(grepl("PM25_", instrument_id)) %>% 
+  
+  
+  
+  #drop these data so not confused w/ no2 when merging
+  filter(!analyte %in% c("nox", "no"),
+         #drop these problematic/unstable No2_2 readings (see note above)
+         !(instrument_id == "NO2_2" & runname == "2019-04-15_LABC" & conc == 80)
+         ) %>%
+    #some instruments (esp NO2) have a lag response period. wait a few seconds before using the data
+    mutate(timeint = timeint + start_lag,
+           endtime = endtime-end_lag
+           ) %>%
+    #one time gets dropped. there is an error/instrument restart note.
+    filter(timeint < endtime) %>%
+  
+  #is this causing merging issues b/c they're different??
+  select(-c(import_id,# id
+            )) %>%
+  distinct() #%>%
+  
+  # #make calibration table long format
+  #   rowwise() %>%
+  #   mutate(time = list(seq(timeint, endtime, 1))) %>%
+  #   ungroup() %>%
+  #   select(-timeint, -endtime) %>%
+  #   unnest(cols=c(time)) %>%
+  #   arrange(time)
+
+test_room_calib_dt <- room_calibrations_data %>%
+  filter(grepl("PM25_", instrument_id),
+         #grepl("2019-11-13", runname)
+         )
+
+room_calibrations_data %>%
+  group_by(variable, instrument_id) %>%
   summarize(
-    number_of_calibrations = n(),
-    dates = paste(date, collapse = ", ")
+    min = min(time),
+    max = max(time)
+  )
+  
+```
+
+
+```{r, fig.height=10}
+
+calibrations <- calibrations_table0 %>%
+  #drop these data so not confused w/ no2 when merging
+  filter(
+    # Tim also collected these data from the CAPS NO2, but we don't need these
+    !analyte %in% c("nox", "no"),
+    ) %>%   
+    #some instruments (esp NO2) have a lag response period. wait a few seconds before using the data
+    mutate(timeint = timeint + start_lag,
+           endtime = endtime-end_lag
+           ) %>%
+    #one time gets dropped. there is an error/instrument restart note.
+    filter(timeint < endtime) %>%
+  #is this causing merging issues b/c they're different??
+  select(-c(import_id,# id
+            )) %>%
+  distinct() %>%  
+  #make calibration table long format
+    rowwise() %>%
+    mutate(time = list(seq(timeint, endtime, 1))) %>%
+    ungroup() %>%
+    select(-timeint, -endtime) %>%
+    unnest(cols=c(time)) %>%
+    arrange(time) %>% 
+  
+  #join actual instrument readings
+  left_join(room_calibrations_data) %>%
+  
+  #make sure timezone is preserved
+  mutate(time = ymd_hms(time, tz = mytz)) %>%
+  filter(
+    #drop these problematic/unstable No2_2 readings (see note above)
+    !(instrument_id == "NO2_2" & runname == "2019-04-15_LABC" & conc == 80),
+    #neph filter was removed after this time
+    !(instrument_id == "PM25_176" & grepl("2019-10-02", runname) & time >= ymd_hms("2019-10-02 14:12:00", tz = mytz)),
+    
+     # these filter on/off times are wrong in the databaes, from looking at the calibration notebook notes
+    !(instrument_id == "PMPT_94" & time > "2019-10-02 14:04" & time < "2019-10-02 15:00" ),
+    !(instrument_id == "PMSCAN_5" & time > "2019-10-02 14:04" & time < "2019-10-02 14:10:10")
+    ) %>%   
+  drop_na(value)
+
+```
+
+ 
+
+```{r}
+p <- list()
+
+for(i in seq_along(calib_instrument_ids)) {
+  #i=8  
+  
+  #if there are data for this instrument..
+  obs <- calibrations %>%
+    filter(instrument_id == calib_instrument_ids[i]) %>%
+    nrow()
+  
+  if(obs > 0) {
+    p[[i]] <- calibrations %>%
+      filter(instrument_id == calib_instrument_ids[i],
+             ) %>%
+      gather(kind, value, conc, value) %>%
+      mutate(
+        kind = recode_factor(factor(kind),
+                             "conc" = "Reference",
+                             "value" = "Instrument"
+                             )
+        ) %>%
+      
+      ggplot(aes(x=time, y=value, col=kind,  
+                 )) + 
+      facet_wrap(~instrument_id + runname, scales="free") + 
+      geom_point(alpha=0.1) +
+      
+      guides(colour = guide_legend(override.aes = list(alpha = 1))) +
+    
+    labs(title = "calibration readings"
+         )
+    
+    print(p[[i]])
+  }
+  }
+
+
+```
+
+* scatterplots of date-specific instrument responses to reference gases 
+
+* we will calculate median instrument responses for any given refernce concentration (there are multiple reference concentrations per calibration date) to use stable instrument responses in the calibration curves. Medians are typically calculated from a few minutes of instrument response data (similar to the stop data).  
+
+* note: some neph data missing after 2019-10-22 (the calibration table thus doesn't have all the entries for PM25_205) because it was documented manually (i.e., one stable reading was recorded for any given refefence concentration) rather than having the instrument produce an output file of readings. It  was thus not included in the database.
+
+```{r}
+calibration_medians <- calibrations %>%
+  mutate(date = factor(substring(runname, 1, 10))) %>%
+  #calculate median instrument response when steady instrument values are considered
+  group_by(variable, instrument_id, runname, date, conc, duration) %>%
+  summarize(value = median(value)) %>%
+  #only include times w/ at least 2 refence concentrations
+  group_by(variable, instrument_id, runname, date) %>%
+  filter(n() >= 2) %>%  
+  ungroup() 
+  
+```
+
+* we still see a slope different from the rest for NO2_2 on 2019-04-15 after dropping one bad set of readings (see note above). The instrument underreported readings for a bit. Calibration adjustments will thus impact ~ 3wks worth of data until the next calibration was completed in 2019-05-06. 
+
+* on 2019-09-25, NO2_1 consistenly undereported known reference concentrations (you see a deviation from the 1-1 line for this day in the plots below). This underreporting was consistent for all of the reference concentrations, including 0 ppb, where it reported concentrations of ~ -24 ppb. This drastic adjustment is thus likely appropriate and not a user-end error (e.g., could NO2 have been recorded in the calibration notebook even though the instrument was actually reporting NO?).
+
+* note that in the plots below, CO2 was automatically reset after each calibration, so no adjustments are necesssary 
+
+```{r, fig.height=10}
+
+calibration_medians %>%
+  #only include gas calibrated instruments
+  filter(instrument_id %in% calib_instrument_ids) %>%
+  
+  ggplot(aes(x=conc, y=value, col=date, group=date)) + 
+  facet_wrap_equal(~instrument_id, scales="free") +
+  theme(aspect.ratio = 1,
+        legend.position = "none"
+        ) +
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
+  geom_line(stat="smooth", method = "lm", size = 0.5, alpha = 0.8) +
+  geom_point(alpha=0.2) + 
+  
+   labs( 
+     title = "Comparison of median instrument responses to reference concentrations",
+     subtitle= "Each line is a calibration date",
+     x = "Reference Conc",
+     y = "Instrument Response Conc"
+       )
+
+```
+
+nephs
+
+```{r}
+co2_neph_response <- 2.14e-5
+```
+
+* responses near `r co2_neph_response` were likely reading CO2 gas, which is associated with this response at T=293K/20C/68F and P=1013 mb for a CO2:Air ratio of 2.61 according to the [instrment manual](https://gml.noaa.gov/aero/instrumentation/pdfs/RR903_manual.pdf).    
+
+* How the observed readings compare with 0 or with `r co2_neph_response` shows how far the neph is out of spec, so you could use those readings to adjust data collected prior to this calib check."
+
+```{r}
+# show all the data, even the times when only single concentrations (e.g., zero) exist
+
+#calibration_medians %>%
+calibrations %>%
+  mutate(date = factor(substring(runname, 1, 10))) %>%
+  #calculate median instrument response when steady instrument values are considered
+  group_by(variable, instrument_id, runname, date, conc, duration) %>%
+  summarize(value = median(value)) %>%
+  #only include times w/ at least 2 refence concentrations
+  group_by(variable, instrument_id, runname, date) %>%
+  ungroup() %>%
+  filter(grepl("neph", variable)) %>%
+  #when nephs response near 2.14e-4, co2 gas was likely used (vs a filter or zero air)
+  #mutate(conc = ifelse(value > 1e-5, co2_neph_response, conc)) %>% 
+  group_by(instrument_id, Reference_gas = conc) %>%
+  summarize(
+    N = n(),
+    Min = min(value),
+    Median = median(value),
+    IQR = IQR(value),
+    Max = max(value),
+    Mean_error = mean(value-conc)
   ) %>%
-  kable(caption = "Number of gas instrument calibrations (incluing nephelometers [PM25]) and particle instrument zero checks during the study period") %>%
+  kable(caption = "Neph responses to reference air. N = number of measured concentrations (1 per day)",
+        #digits = 2
+        ) %>%
+  kable_styling()
+  
+```
+
+```{r neph calibration plot, eval=F}
+# plot all the data, even the times when only single concentrations (e.g., zero) exist
+
+#calibration_medians %>%
+calibrations %>%
+  mutate(date = factor(substring(runname, 1, 10))) %>%
+  #calculate median instrument response when steady instrument values are considered
+  group_by(variable, instrument_id, runname, date, conc, duration) %>%
+  summarize(value = median(value)) %>%
+  #only include times w/ at least 2 refence concentrations
+  group_by(variable, instrument_id, runname, date) %>%
+  ungroup() %>%
+  
+  filter(grepl("neph", variable)) %>%# View()
+  #when nephs response was near 2.14e-4 on 2019-10-02 - I think CO2 gas must have been used (vs a filter or zero air)
+ # mutate(conc = ifelse(value > 1e-5, co2_neph_response, conc)) %>% 
+  
+  ggplot(aes(x=conc, y=value, col=date, group=date)) + 
+  facet_wrap(~instrument_id, scales="free") +
+  theme(aspect.ratio = 1,
+        legend.position = "none"
+        ) +
+  geom_hline(yintercept = c(0, co2_neph_response), linetype=2, alpha=0.5) +
+  geom_vline(xintercept = c(0, co2_neph_response), linetype=2, alpha=0.5) +
+  geom_line(stat="smooth", method = "lm", size = 0.5, alpha = 0.8) +
+  geom_point(alpha=0.8) + 
+  
+   labs( 
+     title = "Comparison of median neph responses to zero and 99.9% CO2 gas",
+     subtitle= "Each colored line is a calibration date \nDashed lines are expected instrument responses based on reference air",
+     x = "Reference Conc",
+     y = "Instrument Response Conc (bscat/m)"
+       )
+
+```
+
+ 
+* calibrate CO and NO2 gas instruments since these were not reset otherwise 
+   * A no intercept model for new NO2_2 is probably best b/c NO2 is constantly resetting to 0...so the intercept should be correct.     
+    * the database shows 0, then span gas, then another 0. 
+* no need to do for CO2 instruments b/c these were reset after calibrations based on the gas level
+* ? probably no need to do this for nephs b/c they were reset if values were different from what was expected based on using 99.99% CO2 gas (~2.14e-5 at Temp = 293K)
+ 
+* the calibration curve will use our sensor as the dependent variable and the true concentration as the independent variable so that the error term is estimated for our sensor. The MOVUP team has seen differences when things are done the other way (how you may traditionally dot his). Thus, we want to model:
+
+$$
+Conc_{instrument} = Conc_{reference}*\beta_1 + \beta_0 + \epsilon
+$$
+
+  * We can then solve for true estimate. If it’s a linear model, we can do this algebraically. 
+  * Since these are high-end instruments they “should” respond linearly on the concs ranges we’re dealing with, and so a simple linear regression should be OK.
+
+$$
+(Conc_{instrument} - \hat\beta_0)/\hat \beta_1  = \hat Conc_{reference} 
+$$
+
+
+* Fit calibration curves for time period until the next calibration. 
+  * note, neph calibration data are not in the database b/c they were collected manually in a very different way than the rest of the data. Nephs were reset after a calibration anyways, so this should not be a problem unless we were concerend that nephs significantly drifted between calibrations. 
+    * Amanda will be summarizing calibration results in the QC report she is working on.
+
+```{r}
+# a no-intercept model for NO2_2
+# an intercept model for NO2_1 and all CO instruments
+
+#NO2_2
+no2_2_calib_curves <- calibration_medians %>%
+  filter(instrument_id == "NO2_2") %>%
+  group_by(variable, instrument_id, runname, date) %>%
+  nest() %>%     
+  mutate(
+                                  #don't estimate intercept
+    lm = map(data, ~lm(value~conc -1, data = .x)),
+    tidied = map(lm, tidy)
+  ) %>%
+  unnest(tidied)
+
+
+### --> add nephs if get more data 
+
+no2_1_and_co_calib_curves <- calibration_medians %>%
+  filter(instrument_id == "NO2_1" | 
+           grepl("CO_", instrument_id)
+         ) %>%  
+  group_by(variable, instrument_id, runname, date) %>% 
+  #only include times w/ at least 2 refence concentrations
+  filter(n() >= 2) %>%  
+  
+  nest() %>%     
+  mutate(
+    lm = map(data, ~lm(value~conc, data = .x)),
+    tidied = map(lm, tidy)
+  ) %>%
+  unnest(tidied)
+   
+calibration_curves <- rbind(no2_2_calib_curves, no2_1_and_co_calib_curves) %>%
+  ungroup() %>%
+  select(variable, instrument_id, runname, date, term, estimate) %>%  
+  spread(term, estimate) %>%
+  rename(intercept = "(Intercept)") %>%
+  mutate(
+    # no2_2 has intercept of 0, though it's not estimated in lm
+    intercept = ifelse(is.na(intercept), 0, intercept),
+    date = as.Date(date)     
+         )
+
+```
+
+```{r}
+# summarize calibation curves
+calibration_curves %>%
+  gather("term", "estimate", intercept, conc) %>%
+  group_by(variable, instrument_id, term) %>%
+  summarize(
+    N = n(),
+    Min = min(estimate),
+    Median = median(estimate),
+    Max = max(estimate)
+  ) %>%
+  #arrange(term, instrument_id) %>%
+  kable(caption = "Distribution of calibration curve coefficient estimates for conc_instrument ~ conc_reference*B1 + B0. N = number of calibration days. 'conc' term is the slope. A no intercept model was fit to instrument NO2_2, which reset after each zero reading.", digits = 2) %>%
   kable_styling()
   
 ```
 
 
-## Zeroing for particle intruments
-notes   
-* notes field does not clarify exact time when the particle filter was placed/removed from the instruments. You can typically see instrument readigns dip for a period of time before going back up though (e.g., 2019-10-22).
+```{r}
+# calibration function calibrates raw data ('value' variable) using the latest calibration curves for any given dataset (e.g., for each instrument_id if it is looped over)  
+
+
+# dt = dt0 %>% filter(instrument_id == "NO2_1") %>%
+#   mutate(value2 = value)
+# calibration_curves_df = calibration_curves %>% filter(instrument_id == "NO2_1")
+
+
+calib_fn <- function(dt, calibration_curves_df) {
+  
+  calibration_dys <- nrow(calibration_curves_df)
+  
+  # loop over every calibration date
+  for(i in 1:calibration_dys) {
+    #i=6
+    
+    #if there are subsequent calibration curves, only calibrate the data until the next calibration curve is fit
+    if(i != calibration_dys) {
+      
+      dt <- dt %>%
+        mutate(
+          value = ifelse(date >= calibration_curves_df$date[i] & date < calibration_curves_df$date[i+1],
+                         (value - calibration_curves_df$intercept[i])/calibration_curves_df$conc[i], 
+                         value 
+                         )
+          )
+      
+      #if it's the last calibration curve, use it all data collected afterwards
+    } else {
+      dt <- dt %>%
+        mutate(
+          value = ifelse(date >= calibration_curves_df$date[i],
+                         (value - calibration_curves_df$intercept[i])/calibration_curves_df$conc[i], 
+                         value 
+                         )
+          )
+      
+    }
+  }
+  
+  return(dt)
+  
+}
+
+```
+
+
+```{r}
+calib_instruments2 <- unique(calibration_curves$instrument_id)
+
+# calibrated data
+dt0_calibrated <- data.frame()
+
+#loop over the calibration function for each instrument_id
+for (i in seq_along(calib_instruments2) ) {
+  #i=2
+  
+  curves_temp <- calibration_curves %>%
+    filter(instrument_id == calib_instruments2[i])
+  
+  dt_temp <- dt0 %>%
+    filter(instrument_id == calib_instruments2[i]) %>%
+    calib_fn(dt = ., calibration_curves_df = curves_temp)
+  
+  dt0_calibrated <- rbind(dt0_calibrated, dt_temp)
+  
+}
+
+
+```
+
+### Update data
+
+```{r}
+dt <- dt0 %>%
+  rename(value_raw = value) %>%
+  left_join(dt0_calibrated) %>%  
+  #if no calibrations were done, use the uncalibrated values
+  mutate(value = ifelse(is.na(value), value_raw, value))
+   
+```
+
+
+## Zero gas
+
+### --> waiting for Amanda to update calibration table since it currently does not inclue zero's that occurred at the end of routes ?
+
+* **If instruments report readings near 0 and the noise is small (compared to a low background level?), we may not need to do anything to adjust particle readings** 
+
+### --> If readings are not near 0 or the noise is large, ask Edmund Elena what we should do about specific instrument. adjust backwards? 
+
+
+* this is mainly for particle instruments, but may include some gas instruments that were checked with zero air
+
+* field notesdo not always clarify exact time when the particle filter was placed/removed from the instruments. You can typically see instrument readigns dip for a period of time before going back up though (e.g., 2019-10-22).   
+
+* no notes on why particle readings may have been elevated on 2019-03-13 
+* no notes on why PMDISC_8 on 2019-07-10 reported some very high readings    
 
 observations      
 
-* there are no notes in the calibration table for 5/6 to explain why PMPT_94 did not read anywhere near 0 if a zeroing activity occurred. The filter could have not been placed on the inlet?
-
-* The filter may not have been placed correctly/on time on 2019-05-06?
-
 ```{r}
-
-# NOTE: don't use "analyte" column, which is wrong for some instruments??
+# NOTE: don't use "analyte" column, which is wrong for some instruments
 
 calibrations %>%
   # look at particle instruments
-  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
-                    !str_detect(instrument_id, "PM25")
-                    ) %>% 
-  
-  ggplot(aes(x=time, y=value, col=instrument_id, shape=instrument_id)) + 
-  scale_shape_manual(values = c(1:length(unique(calibrations$instrument_id)))) +
-  facet_wrap(~date, scales="free") + 
+  filter(
+    str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
+    #conc==0,
+    ) %>% 
+  ggplot(aes(x=time, y=value, col=runname, shape=runname)) + 
+  scale_shape_manual(values = c(1:length(unique(calibrations$runname)))) +
+  facet_wrap(~runname+instrument_id, scales="free") + 
   geom_point(alpha=0.5) + 
   geom_hline(yintercept = 0, linetype="dashed")
 
+#particle instruments
+#p1 %+% subset(calibrations, str_detect(instrument_id, "PM") & !str_detect(instrument_id, "PM25"))
+
+
+```
+
+* same as above, but using 2-minute medians
+
+```{r}
+calibrations %>%
+  # look at particle instruments
+  filter(
+    str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
+    #conc==0,
+    ) %>% 
+  #calculate 2-min median readings for each instrument
+  mutate(time = floor_date(time, unit = "2 min")) %>%
+  group_by_at(vars(-value)) %>%
+  summarize(value = median(value)) %>%  
   
-  
-# dates
+  ggplot(aes(x=time, y=value, col=runname, shape=runname)) + 
+  scale_shape_manual(values = c(1:length(unique(calibrations$runname)))) +
+  facet_wrap(~runname+instrument_id, scales="free") + 
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype="dashed")
+
+```
+
+* we ideally want "low stop conc" values for each instrument to be much higher than that instrument's "median overall conc" during zeroing. We see that for most instruments except:    
+  * neph values (PM25_176 are close)      
+  * BC_0063 where a low stop value is actually below the median zero concentration value. This coud be because    
+    - eathalometers are very noisy   
+    - is it possible that some places have BC readings near 0 ng/m3?   
+
+  * **boxplots are not traditional**, the whiskers indicate the 2.5th and 97.5th quantiles (range for 95% of the data)
+  * 'Low value' represents a typically low value for that instrument while on route, based on the 5th quantile of second-level data
+
+```{r}
+
+#what is a low reading?
+low_q <- 0.05
+
+low_value <- dt %>%
+  group_by(variable, instrument_id) %>%
+  summarize(low = quantile(value, low_q))
+
+```
+
+```{r}
 calibrations %>%
   # look at particle instruments
   filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
-                    !str_detect(instrument_id, "PM25")
-                    ) %>%  
-  group_by(date, #instrument_id
-           ) %>%
+         #Discmini 8 has 1 instance whre conc is missing but a diff filter was used
+         ) %>% 
+  group_by(variable, instrument_id) %>%
+  alt_boxplot(var = "value") %>%
+  left_join(low_value) %>%  
+  
+  ggplot(aes(x=instrument_id)) + 
+  facet_wrap(~variable, scales="free") +
+  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
+  geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
+  # a low on-route value (for comparison)
+  geom_hline(aes(yintercept = low, col=paste0("Low Stop Conc\nQ", low_q))) +
+  labs(title="instrument readings during 0 pt/cm3 concentration times (filter use)",
+       col=""
+       )
+
+
+```
+
+
+* don't see temporal trends to suggest shifting instrument readings over time?
+
+```{r}
+
+calibrations %>%
+  # look at particle instruments
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
+         #Discmini 8 has 1 instance whre conc is missing but a diff filter was used
+         #conc==0
+         ) %>% #View()
+  group_by(variable, instrument_id, runname) %>%
+  alt_boxplot(var = "value") %>%
+  left_join(low_value) %>%  
+  
+  ggplot(aes(x=instrument_id, fill=runname)) + 
+  facet_wrap(~variable, scales="free") +
+  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
+  geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
+
+  scale_fill_brewer(palette = "Purples") +
+  labs(title="instrument readings during 0 pt/cm3 concentration times (filter use)",
+       col=""
+       )
+
+```
+
+* table shows that:  
+  - most of the readings are genreally near 0   
+  - median concentrations are low relative to a "low" ambient concentration ("Q50/low val"; where a low value is defined as quantile `r low_q` during a stop). This suggests that instruments are responding to the filter placement   
+    * exceptions are BC (ambient BC readings near 0 could be real?) and nephs   
+  - the IQR of instrument readings during zeroing is genrally small realtive to a low ambient concentration excetp for   
+    nephs, BC and nanoscan 5 
+    
+### --> are the nephs, BC and scan 3/5 probelematic?
+
+```{r}
+# table 
+calibrations %>%
+  # look at particle instruments
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
+                    #!str_detect(instrument_id, "PM25"),
+         #conc==0
+         ) %>% 
+   #calculate 2-min median readings for each instrument
+  mutate(time = floor_date(time, unit = "2 min")) %>%
+  group_by_at(vars(-value)) %>%
+  summarize(value = median(value)) %>%  
+  ungroup() %>%
+  mutate(date = substr(runname, 1, 10)) %>%
+  left_join(low_value) %>%  
+  group_by(instrument_id) %>%  
   summarize(
-    instruments = paste(unique(instrument_id), collapse = ","),
-    #notes = paste(unique(notes), collapse = "," )
+    N = n(),
+    Days = length(unique(date)),
+    Q02.5 = quantile(value, 0.025),
+    Q25 = quantile(value, 0.25),
+    Q50 = median(value),
+    Q75 = quantile(value, 0.75),
+    IQR = IQR(value),
+    Q97.5 = quantile(value, 0.975),
+    
+    #compare to a "low value"
+    low_ambient_conc = unique(low),
+    'Q50/low_ambient_conc' = Q50/low_ambient_conc,
+    'IQR/low_ambient_conc' = IQR/low_ambient_conc
+    
+    ) %>%
+    kable(caption = paste0("Raw instrument readings during zeroing. Quantiles are the error for zero concentration (e.g., Q50 = median error). N = number of 2-min readings. Low ambient concentration values are esimated from stop data based on quantile ", low_q, "."), 
+          digits = 2
+          ) %>%
+    kable_styling()
+     
+```
+
+
+### --> ? may decide to adjust particle instruments backwards since these are not adjusted like the gas instruments are otherwise? 
+
+```{r}
+
+
+```
+
+
+# Aethalometer Attenuation
+
+* checking the filter attenouation (uv_atn1 is what triggers the tape). If the attenuation is > 50%, the filter is less sensitive and could account for the zero readings. If this is true, we would want to drop these data. 
+
+* everything looks fine. Most of the UV wavelength readings are far from 50% attenuation.
+
+```{r}
+# table
+ma200 %>% 
+  filter(variable == "ma200_uv_atn1") %>% 
+  group_by(instrument_id) %>%
+  summarize(
+    N = n(),
+    Min = min(value),
+    Q25 = quantile(value, 0.25),
+    Median = median(value),
+    Q75 = quantile(value, 0.75),
+    Max = max(value)
   ) %>%
-  kable(caption = "zero check dates and instruments. The notes field does not indicate the exact filter placement/removal time from instruments (when instruments should have read '0')") %>%
+  kable(caption = "Aethalometer UV attenuation readings. N = number of 10-sec readings.") %>%
   kable_styling()
   
-  
-  
-    # #some instruments had duplicate files in one day
-  # distinct(instrument_id, date) %>% 
-  # group_by(instrument_id) %>%
-  # summarize(
-  #   number_of_zeros = n(),
-  #   dates = paste0(unique(date), collapse = ", ")
-  #   
-  # ) %>%
-  # kable(caption = "when zero checks for particle instruments occurred") %>%
-  # kable_styling()
-
 ```
 
 
-
-
-
-
-
+* there doesn't seem to be an association between low BC readings and attenuation (UV is what makes the tape advance). 
 
 ```{r}
-# Instrument Time Trends w/ All Data
-
-```
-
-```{r}
-### --> delete here and only do at  2-min level?
-### --> see manuals?
-```
-
-
-notes   
-* see how values change as a sampling day goes on (e.g., see NO2 isues?)
-* plotting hours as a continous variable   
-* note: this is only using stop data 
-
-observations       
-* see some instrument sensitivity over time (e.g., CO2 sensitiviy early on)?
-* changes over time could occur b/c: a) different sites; b) changing AP levels; c) instrument issues   
-* backup instruments typically have a lot less data (so more variable)
-
-
-```{r, fig.height=12, eval=F}
-
-p <- list()
-
-#give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
-
-for(i in seq_along(ap)) {
-  #i=1
-  
-  p[[i]] <- dt0 %>%
-    
-    filter(variable == ap[i],
-           #location != "MS0000"
-           ) %>%
-    
-    group_by(instrument_id, runname) %>%
-    #calculate time since start of run
-    mutate(time = as.numeric(difftime(time, min(time), units = "hours"))) %>% #View()
-    
-    #drop roosevelt after use it ot calculate start time
-    filter(location != "MS0000") %>%
-    
-    ggplot(aes(x=time, y=value, col=instrument_id, 
-               linetype=primary_instrument
-               )) +
-    geom_smooth() +
-    facet_wrap(~variable, scales="free") +
-    
-    # theme(legend.justification=c(0,0), legend.position=c(0,0),
-    #       #legend.key = element_blank(), #legend.key.size = 1
-    #       ) +
-     
-    labs(x= "hours since departing Roosevelt garage",
-         col="",
-         linetype = ""
-         )  
-  
-  p[[i]]
-  
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
-
-```
-
-same as above but by stop order number (note, some routes may take a while to get to first stop, e.g., route 8)
-
-
-
-```{r, fig.height=12, eval=F}
-### --> error: plots r empty 
-
- 
-#plot with all the data
-p0 <- dt0 %>%
-    ggplot(aes(x=location, y=value, col=instrument_id, 
-               linetype=primary_instrument
-               )) +
-   geom_boxplot() + 
-  #geom_smooth() +
-    facet_wrap(~variable, scales="free") +
-    
-    #theme(legend.justification=c(0,0), legend.position=c(0,0)) +
-    
-    labs(x= "stop order number within a run",
-         col="",
-         linetype = ""
-         )
-
-p <- list()
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-  
-  #only plot a subset of the data
-  p[[i]] <- p0 %+% subset(dt0, variable == ap[i])
-
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
-
-
-```
-
-
- 
-
-
-# Fieldnotes and instrument warnings 
-
-### --> see if instrument errors are associated w/ poor instrument collocations
-
-### -> have Kaya code these and ID things that need attention? how to do this efficiently?
-
-notes    
-* see QAQC.html doc that Amanda and Kaya have worked on 
-  * most instrument error codes don't have "use" indicators to clarify whether that data should be used or not though (as of 5/11/21)     
-
-*e.g., alcohol wick issues 
-
-```{r}
-fieldnotes2 <- fieldnotes %>%
-  #only look at stop data w/ notes
-  filter(
-    str_detect (site_id, regex("^MS|MC", ignore_case = T)),
-    !is.na(notes),  
-    !notes %in% c("", ".", "\\")
+ma200 %>%
+  select(time, instrument_id, variable, value) %>%
+  spread(variable, value) %>%
+  gather("variable", "value", contains("atn1")) %>% 
+  ggplot(aes(y=ma200_ir_bc1, x=value, col=variable)) + 
+  facet_grid(variable~instrument_id) +
+  geom_point(alpha=0.3) +
+  geom_vline(xintercept = 50, linetype=2, alpha=0.5) +
+  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
+  geom_smooth(se=F, col="black") + 
+  labs(
+    title = "BC readings vs filter attenuation",
+    y = "BC (ng/m3)",
+    x = "Attenuation (%)"
   )
 
 
@@ -975,34 +1554,22 @@ fieldnotes2 <- fieldnotes %>%
 
 
 
+### --> ? Check other error codes (low flow etc). get the % (avg of binary) flag for any given stop. e.g., if 1% of the data has low flow error, may not need to worry  
+
+* older sources that are slightly different 
+  * the [mm_trap_qaqc repository](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/format_db_flags.R)   
+  * Amanda's QAQC html only has status values (not always numerical) for some of the instruments (as of 2021-06-11)   
+
+```{r}
+
+
+
+```
+
+
 # Summary of all raw data 
-
-### --> drop instrument error messages? 
-
-```{r}
-
-```
-
-
-```{r}
-# note: doing this at the stop level. otherwise PMPTSCREEN_94 has some low values that don't correlate wel w/ PMPTSCREEN_3
-
-low_pt_val <- 300
-
-dt <- dt0 #%>%
-  # filter(
-  #   #drop particle readings of 0 since these are often associated w/ alcohol wick issues (not inlcuding neph)
-  #   !(grepl("PM", instrument_id) & !grepl("PM25", instrument_id)  & value <= low_pt_val)
-  #  )  
-  
-```
-
-```{r, eval=F}
-print("proportion of data dropped")
-
-(nrow(dt0) - nrow(dt))/nrow(dt0) # ~0.04%
-
-```
+ 
+ 
 
 ```{r}
 print("total raw, second-level obsevations")
@@ -1054,7 +1621,7 @@ for(i in seq_along(ap)) {
   #i=1
 
   #only plot a subset of the data
-  df <- dt0 %>%
+  df <- dt %>%
     #drop Roosevelt Garage
     filter(location != "MS0000",
            variable== ap[i]) #%>% 
@@ -1094,28 +1661,55 @@ for(i in seq_along(ap)) {
   
   }
 
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+ggarrange(plotlist =  p, ncol = 2, nrow = 5)
 
 ```
 
 
 # Calculate Site medians (for each instrument)
 
- 
-- don't include lab data here? 
 
 ```{r}
+max_stop_duration <- 180 #3 min
+
+
+dt %>%
+  filter(location != "MS0000") %>%
+  distinct(runname, location, time, stop_id ) %>%
+  group_by(runname, location, stop_id) %>%
+  #only keep first 3 min of data collected. some stops were ~ 20-30 min long (e.g., driver breaks)
+  filter(time- min(time) <= max_stop_duration) %>% 
+  summarize(stop_duration = difftime(max(time), min(time), units = "mins")) %>%
+  ungroup() %>%  
+  summarize(
+    N = n(),
+    # N_above3min = sum(stop_duration>3),
+    # Prop_above3min = N_above3min/N,
+    Min = min(stop_duration),
+    Median = median(stop_duration),
+    Max = max(stop_duration)
+  ) %>%
+  kable(caption = "Stop duration when using first 3 minutes. N = number of stops.", digits = 2) %>%
+  kable_styling()
+
+```
+
+
+ 
+```{r}
 #note: on rare instantces when duplicate instruments were on board, all the data are used to calculate a median
+
 dt_stops <- dt %>%
   filter(location != "MS0000") %>%
-  #calculate arrival time at any stop
-  group_by(runname, date, location) %>%
+  #calculate arrival time at any stop. also ensure that duplicate instruments are aligned correctly
+  group_by(runname, date, location, stop_id) %>%
+  #only keep first 3 min of data at each stop
+  filter(time- min(time) <= max_stop_duration) %>%
   mutate(time = min(time)) %>%  
-  
-   group_by(runname, date, time, location, site, instrument_id, variable, primary_instrument) %>%
+   group_by(runname, date, time, location, stop_id, site, instrument_id, variable, primary_instrument) %>%
   summarize(
-    #mean_value = mean(value),
-    value = median(value)
+    value = median(value),
+    value_raw = median(value_raw)
   ) %>%
   ungroup()
 
@@ -1124,51 +1718,10 @@ dt_stops <- dt %>%
 
 # Summary of stop-level data 
 
-notes    
-* boxplots are not traditinal. they show specific quantiles 
-
  
-```{r, fig.height=12, eval=F}
-p <- list()
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-
-  #only plot a subset of the data
-  p[[i]] <- dt_stops %>%
-  
-  filter(
-    ##drop Roosevelt Garage
-    #location != "MS0000",
-         variable== ap[i]
-         ) %>%
-    
-    #calc stats for alternative boxplots
-    group_by(instrument_id, variable, primary_instrument) %>%
-    alt_boxplot(var = "value") %>%  
-    
-    ggplot(aes(x=instrument_id, #col=instrument_id, 
-               linetype=primary_instrument),) + 
-    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
-    
-    facet_wrap(~variable, scales="free") +
-    
-    labs(linetype="Instrument", col="ID")
-  
-  #p[[i]]
-  
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
-
-
-```
-
-
 * labels are for the min/max reading of each instrument 
 
-```{r, fig.height=12, eval=T}
+```{r, fig.height=12}
  
 p <- list()
 
@@ -1212,16 +1765,16 @@ for(i in seq_along(ap)) {
   
   }
 
-ggarrange(plotlist =  p, ncol = 2, nrow = 4)
+ggarrange(plotlist =  p, ncol = 2, nrow = 5)
 
 
 ```
 
 
-
-amount of data outside of expectd instrument ranges
+amount of data outside of expected instrument ranges
    
 * out of range date is more likely to be below the minimum instrument range. Removing all values outside the instrument range could thus bias overall median slightly up (this was more true when we ran this at the raw second level, where ~16% of BC data was below the min)
+
 
 ```{r}
 dt_stops %>%
@@ -1231,8 +1784,7 @@ dt_stops %>%
   mutate(n_original = n()) %>%
   ungroup() %>%
   
-  left_join(instrument_range) %>%
-  #filter(value >= Min, value <= Max) %>% #View()
+  left_join(instrument_range) %>%  
   mutate(below_min = value < Min,
          above_max = value > Max
          ) %>%
@@ -1254,9 +1806,47 @@ dt_stops %>%
 
 ```
 
-stop estimates when values outside the range of data are dropped
 
-```{r, fig.height=12}
+## Update data
+
+* **drop median estimates outside the range of each instrument's reporting range**    
+* drop NanoScan and non-screened PTRAK values < 300 pt/cm3   
+* drop screened PTRAK values < 100 pt/cm3.    
+* **note that there are few readings being dropped here, and that these additional cut offs are much lower than the ambient levels we normally see.**
+
+```{r}
+min_tot_ufp <- 300
+min_screen_ufp <- 100
+
+dt_stops2 <- dt_stops %>%
+    left_join(instrument_range) %>% 
+    #neph has no max. need a number to avoid an error
+    mutate(Max = ifelse(is.na(Max), 9999999, Max)) %>%  
+    #drop values outside the expected instrument range
+  filter(value >= Min, value <= Max)  %>%
+  #drops 3 UFP values < 300
+  filter(
+    !(variable %in% c("ns_total_conc", "pnc_noscreen") & value < min_tot_ufp ),
+    !(variable %in% c("pnc_screen") & value < min_screen_ufp ),
+    )
+  
+
+#keep approved stop data, but see raw values
+dt2 <- dt_stops2 %>%
+  distinct(date, location, instrument_id) %>%
+  left_join(dt)
+
+```
+
+```{r}
+# stop estimates when values outside the range of data are dropped
+# 
+# * CO still has extreme values. So do some of the UFP instruments.
+
+```
+
+
+```{r, fig.height=12, eval=F}
 p <- list()
 
 #give each facet its own instrument_id legend
@@ -1264,7 +1854,7 @@ for(i in seq_along(ap)) {
   #i=3
 
   #only plot a subset of the data
-  df <- dt_stops %>%
+  df <- dt_stops2 %>%
     left_join(instrument_range) %>% 
     
     #neph has no max. need a number to avoid an error
@@ -1306,47 +1896,8 @@ for(i in seq_along(ap)) {
   
   }
 
-ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
+ggarrange(plotlist =  p, ncol = 2, nrow = 5) %>%
   annotate_figure(top = "Stop medians when stops with values outside an instrument range are dropped")
-
-```
-
-## Update data
-
-* **drop median estimates outside the range of each instrument's reporting range**    
-* drop NanoScan and non-screened PTRAK values < 300 pt/cm3   
-* drop screened PTRAK values < 100 pt/cm3. there is one value of 2.0. All other readings are > 100 pt/cm3.   
-
-### --> ? not doing currently: drop BC readings equal to 0 ng/m3 (~7 estimates). This doesn't happen in real life, but other instruments could have also had "0" readings
-
- 
-
-```{r}
-min_tot_ufp <- 300
-# PMPTSCREEN_94 has 1 reading of 2. All other readings are > 100
-min_screen_ufp <- 100
-
-dt_stops2 <- dt_stops %>%
-    left_join(instrument_range) %>% 
-    #neph has no max. need a number to avoid an error
-    mutate(Max = ifelse(is.na(Max), 9999999, Max)) %>% #View()
-    filter(
-      #drop values outside the expected instrument range
-      value >= Min, value <= Max 
-           )  %>%
-  #drops 3 UFP values < 300
-  filter(
-    !(variable %in% c("ns_total_conc", "pnc_noscreen") & value < min_tot_ufp ),
-    !(variable %in% c("pnc_screen") & value < min_screen_ufp ),
-    # #drop BC readings = 0
-    # !(variable %in% c("ma200_ir_bc1") & value == 0),
-    )
-  
-
-#keep approved stop data, but see raw values
-dt2 <- dt_stops2 %>%
-  distinct(date, location, instrument_id) %>%
-  left_join(dt)
 
 ```
 
@@ -1380,7 +1931,6 @@ extreme_high <- dt_stops2 %>%
   group_by(variable) %>%
   mutate(median_overall_value = median(value)) %>%
   filter(value == max(value)) %>% 
-  #ungroup() %>%
   distinct(date, location, instrument_id, value, median_overall_value) %>%
   group_by(date, location) %>%
   summarize(instrument_id = paste0(unique(instrument_id), collapse = "|"),
@@ -1391,16 +1941,17 @@ extreme_high <- dt_stops2 %>%
 extreme_high %>%
   kable(caption = "stops where the max instrument value has been observed") %>%
   kable_styling()
+
 ```
 
 * high instrument observations tend to occur when other particle readings are also high, particularly for particle instruments
 
+* CO 190134 looks unstable
+
 * CO2_19 (backup) has much higher readings than co2_14 (primary) on 6/13 and higher readings than other CO2 readings.     
-  * **drop all co2_19 readings?** co2_19 also recorded the highest co2 readings in the dataset on the same day at different stops. CO2_19 was never used on its own.
+  * **will drop all co2_19 readings** since co2_19 also recorded the highest co2 readings in the dataset on the same day at different stops, and CO2_19 was never used on its own.
 
-* BC on 2/10 stands out here, but other particle instruments are also increasing though less so
-* **keep NO2_2 on 5/11 since otehr instruments are also high?**
-
+* on 2/10, BC and other particle instruments show elevatd concentrations, so okay?
 
 ```{r, fig.height=10}
 df <- data.frame()
@@ -1418,38 +1969,25 @@ for (i in 1:nrow(extreme_high)) {
   
 }
   
-temp_labels <- df %>%
-  drop_na() %>%
-  
+temp_labels <- df %>% 
   group_by(date, location) %>%
-
   mutate(time = min(time),
-         value = max(value)
-         ) %>%
-  ungroup() %>%
-  
+         value = max(value)) %>%
   group_by(date, location, time, value) %>%
-  summarize(
-    extreme_instrument = paste0(unique(extreme_instrument), collapse = ", ")
-  )
+  drop_na(extreme_instrument) %>%
+  summarize(extreme_instrument = paste0(unique(extreme_instrument), collapse = ", "))
   
   df %>%  {
-    
     ggplot(., aes(x=time, y=value)) + 
-    
-      #black points make it easier to ID questionnable data
-      geom_point(data=subset(., instrument_id==extreme_instrument), size=2) +
-      
       geom_point(aes(shape=instrument_id, col=variable)) +
+      #black points make it easier to ID questionnable data
+      geom_point(data=subset(., instrument_id==extreme_instrument), size=1) +
       geom_text(data = temp_labels, aes(label= extreme_instrument), 
                hjust=0, show.legend = F) +
-    
       facet_wrap(date~location, scales = "free") +
       scale_shape_manual(values = c(1:length(unique(dt_stops$instrument_id)))) +
-      
       #don't show size in legend 
       guides(size = F) + 
-      
       labs(y = "Standardized Value: (X-mean)/SD",
            title = "Plots of when high instrument readings occur"
            )
@@ -1461,12 +1999,13 @@ temp_labels <- df %>%
 
 * there are more instances with min readings than max readings
 
+* CO 190134 goes from very high to very low readings
+
 ```{r}
 # pull out stops when we saw max values
 extreme_low <- dt_stops2 %>%
   group_by(variable) %>%
-  filter(value == min(value) #| value == min(value),
-         ) %>% 
+  filter(value == min(value)) %>% 
   distinct(date, location, instrument_id) %>%
   group_by(date, location) %>%
   summarize(instrument_id = paste0(unique(instrument_id), collapse = "|"))
@@ -1498,34 +2037,26 @@ for (i in 1:nrow(extreme_low)) {
 }
   
 temp_labels <- df %>%
-  drop_na() %>%
   ungroup() %>%
   group_by(date, location) %>%
-
   mutate(time = min(time),
-         value = max(value)
-         ) %>%
+         value = max(value)) %>%
   
   group_by(date, location, time, value) %>%
+  drop_na(extreme_instrument) %>%
   summarize(extreme_instrument = paste0(unique(extreme_instrument), collapse = ", "))
   
   df %>%  {
-    
-    ggplot(., aes(x=time, y=value)) + 
-    
-      #black points make it easier to ID questionnable data
-      geom_point(data=subset(., instrument_id==extreme_instrument), size=2) +
-      
+    ggplot(., aes(x=time, y=value)) +
       geom_point(aes(shape=instrument_id, col=variable)) +
+      #black points make it easier to ID questionnable data
+      geom_point(data=subset(., instrument_id==extreme_instrument), size=1) +
       geom_text(data = temp_labels, aes(label= extreme_instrument), 
                hjust=0, show.legend = F) +
-    
       facet_wrap(date~location, scales = "free") +
       scale_shape_manual(values = c(1:length(unique(dt_stops$instrument_id)))) +
-      
       #don't show size in legend 
       guides(size = F) + 
-      
       labs(y = "Standardized Value: (X-mean)/SD",
            title = "Plots of when low instrument readings occur"
            )
@@ -1551,6 +2082,8 @@ dt_stops3 <- dt_stops2 %>%
 
 # Collocated duplicate instruments
 
+* No primary standard for UFPs unless instrument returned to TSI.  So need to address between-instrument data and how well they are reading the peaks.  
+
 ```{r}
 #header names in both sources of data: stop and room data 
 common_names <- intersect(names(dt_stops3), names(room_colo))
@@ -1565,30 +2098,39 @@ dt_stops3_colo_wide <- dt_stops3_colo %>%
   #select(-primary_instrument) %>%
   spread(instrument_id, value)
 
-# dt_wide <- dt %>%
-#   spread(instrument_id, value)
-  
+ 
 ```
 
-* note, have to modify code if we ever have > 2 collocated duplicate instruments (e.g. if we keep all the PMPTSCREEN data above)
 
-```{r}
+```{r, eval=F}
+# DON'T need to do this b/c most of this is in the plots already?
+
+# * note, have to modify code if we ever have > 2 collocated duplicate instruments (e.g. if we keep all the PMPTSCREEN data above)
+
+
+### --> recode. why does ma200 have NAs? pnc_screen has R2_reg of 1.00??
+### --> edit code for CO 
+
+
 df <- data.frame()
 
 #only keep stop data w/ collocations
 colo3 <- dt_stops3_colo %>%
-  group_by(time, site, variable) %>%
-  filter(length(unique(instrument_id)) >1 ) %>% 
+  group_by(time, site, variable) %>% #mutate(length=length(unique(instrument_id))) %>%View()
+  mutate(colo_yes = length(unique(instrument_id)) >1) %>% #View()
+  filter(colo_yes == TRUE ) %>%  #View()
   ungroup() %>%
   #make sure this is arranged by time
   arrange(time)
   #select(-primary_instrument)
 
 for(i in seq_along(ap)) {
-  #i=1
+  #i=2
   
+  if(ap[i] != "co_ppm") {
+    
   temp <- colo3 %>%
-    filter(variable == ap[i]) %>%
+    filter(variable == ap[i]) %>% #View()
     group_by(variable) %>% #View()
     summarize(
       n_pairs = n()/2,
@@ -1613,6 +2155,7 @@ for(i in seq_along(ap)) {
     )  
   
   df <- rbind(df, temp)
+  }
   
 }
 
@@ -1624,40 +2167,15 @@ df %>%
 
 ```
 
+* most instrument collocations look okay, except for:      
+  * CO2_19  - drop since it is never used on its own?     
+  * NO2_1 tends to read high
+  * PMSCAN_3 reads low/different at times but readings look OK for most of 2019 
 
-
-* BC looks good 
-* **CO2 has a poor fit w/ the backup instrument**, which tends to report high readings
-
-  * drop co2_19, especially since it is never used on its own?
-* NO2 looks good 
-* nephs look good
-* discminis look good
-
-* PTRAKS look good
-* screened P-TRAKS look good    
-  * only these 2 screened PTRAKS were collocated.
-
-* **PMSCAN 3 has lower readings in 2020, but readings look OK for 2019**
-
-* PMPT 94 seems to have higher readings than PMPT 93 for 6 seconds. 94 readings are higher than surrounding readings, so this instrument is a) wrong, or b) placed near a source for a few seconds. There's no documentation for this?
-
-```{r, eval=F}
-# dt_stops3_colo_wide %>%
-#   drop_na(PMPT_93, PMPT_94) %>%
-#   filter(grepl("lab", site, ignore.case = T),
-#          runname == "2019-04-18_LABC",
-#          time < "2019-04-18 13:00:00"
-#          
-#          # PMPT_93 > 2000 & PMPT_93 < 5000,
-#          # PMPT_94 > 4000 & PMPT_94 <10000
-#          ) %>% 
-#   select(runname:variable, contains("PMPT_"),) %>% View()
-
-```
-
-
-```{r, fig.height=18}
+* CO 1 (primary instrument) does not correlate well with either of the backup instruments. There is a lot of noise with CO 3, while CO 190134 seems to report very high readings    
+  * CO 190134 seems to have values much higher than expected when compared to CO1 and CO3
+  
+```{r, fig.height=21}
 
 p <- list()
 
@@ -1699,44 +2217,123 @@ p[[8]] <- dt_stops3_colo_wide %>%
   colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", col.by = "site", alpha_value = 0.7) + 
   labs(col="Route")
 
-ggarrange(plotlist = p, ncol = 2, nrow = 4) %>%
+
+# CO
+p[[9]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "CO_1", y.variable = "CO_3", col.by = "site", alpha_value = 0.7
+            ) + 
+  labs(col="Route")
+
+p[[10]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "CO_1", y.variable = "CO_190134", col.by = "site", alpha_value = 0.7
+            ) + 
+  labs(col="Route")
+
+p[[11]] <-  dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "CO_3", y.variable = "CO_190134", col.by = "site", alpha_value = 0.7
+            ) + 
+  labs(col="Route")
+
+ggarrange(plotlist = p, ncol = 2, nrow = 6) %>%
   annotate_figure(top = "Instrument Collocations")
 
 ```
 
+* NanoScan_3 correlates well with NanoScan_5 during 2019 but deviates around 2019-09, with the largest differences starting 2020-02 when the R2 drop a lot.   
+* Nanoscan 3  returned from TSI after being serviced on 2/13/20
+  * We'll only keep the data collected prior, which will allow us to use data collected with this instrument a few days before PMSCAN_5
 
-* PMSCAN_3 looks fine before 2020. We'll only keep the data collected during 2019, which will allow us to use data collected with this instrument a few days before PMSCAN_5
+* Note from Tim G: "...the variation between the NanoScans may be different in different size bins, so you might want to do a size-specific correction, depending on the data that you will use in subsequent analysis"
 
-```{r}
-dt_stops3_colo_wide %>%
-  filter(year(date) < "2020"
-         #date < "2019-04-01"
-         ) %>%
-  colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", col.by = "runname", alpha_value = 0.7, mytitle = "Collocated NanoScan data during 2019 (excludes 2020)") 
-   
+```{r, echo=T}
+# ? right?
+drop_ns3 <- ymd("2020-02-01")
+
 ```
 
-## Collocation instrument time trends
-
-*see if duplicate instruments behave differenlty over time when in exact same place 
-
-* still see some trends related to how long instruments are run (is this real?)   
- 
 ```{r}
+
+dt_stops3_colo_wide %>%
+  drop_na(PMSCAN_5, PMSCAN_3) %>%  
+  mutate(ym = substr(date, 1, 7)) %>%  
+   
+  ggplot(aes(x=PMSCAN_5, y=PMSCAN_3)) + 
+  facet_wrap_equal(~ym, scales="free") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.4) +
+  geom_point(alpha=0.7, aes(col=runname)) +
+  geom_smooth(se = F, method="lm", aes(col=runname)) +
+  #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  stat_poly_eq(aes(label =  paste(stat(eq.label),
+                                  stat(rr.label), sep = "*\", \"*")),
+               formula = y~x, parse=T) +
+  
+  labs(title = "Comparison of collocated NanoScans over time.",
+       subtitle = "linear fit are for all the data on each panel"
+  )
+
+```
+
+* NO2_1
+
+```{r}
+
+dt_stops3_colo_wide %>%
+  drop_na(NO2_2, NO2_1) %>%
+  mutate(ym = substr(date, 1, 7)) %>%  
+   
+  ggplot(aes(x=NO2_2, y=NO2_1, )) + 
+  facet_wrap_equal(~ym,) + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.4) +
+  geom_point(alpha=0.7, aes(col=runname)) +
+  geom_smooth(se = F, method="lm", aes(col=runname)) +
+  #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  stat_poly_eq(aes(label =  paste(stat(eq.label),
+                                  stat(rr.label), sep = "*\", \"*")),
+               formula = y~x, parse=T) +
+  
+  labs(title = "Comparison of collocated NO2 over time")
+
+```
+
+* density plots ofPMPTSCREEN 2 and 93, the two screened p-traks that were mostly used in the campapign since they were never collocated   
+  * things look fine - values are generally similar    
+
+```{r}
+dt_stops3 %>%
+  filter(grepl("pnc_screen", variable)) %>%
+  ggplot(aes(x=value, col=instrument_id, linetype=primary_instrument)) + 
+  geom_density() + 
+  scale_x_log10() + 
+  labs(title = "distribution of screened P-TRAK values")
+  
+```
+
+
+```{r}
+# ## Collocation instrument time trends
+# 
+# *see if duplicate instruments behave differenlty over time when in exact same place 
+# 
+# * still see some trends related to how long instruments are run (is this real?)   
+
+```
+ 
+```{r, eval=F}
 
 colo <- data.frame()
 
 for (i in seq_along(instruments)) {
-  #i=1
+  #i=2
   
   colo0 <- dt_stops3_colo_wide %>%
     # #these were never collocated w/ the others
     # select(-PMPTSCREEN_2, -PMPTSCREEN_93) %>% 
     
-    select(date, time, #location, 
+    select(runname, date, time, #location, 
            site, variable, contains(paste0(instruments[i], "_" ))) %>%
-    drop_na() %>%
-    gather("instrument_id", "value", contains(instruments[i])) 
+    
+    gather("instrument_id", "value", contains(instruments[i])) %>%
+    drop_na()
   
   if(i==1) {
     colo <- colo0
@@ -1749,124 +2346,288 @@ colo <- colo %>%
     mutate(
       primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
       primary_instrument = factor(primary_instrument, levels = c("Primary", "Backup"))
-    )
+    ) %>%
+  drop_na(value)
 
 #unique(colo$instrument_id)
 
 ```
 
-* **things look good? would expect concentrations to increase as the day goes on if you depart early on, and the opposite to happen if you start in the afternoon**
+```{r}
+# * **things look good? would expect concentrations to increase as the day goes on if you depart early on, and the opposite to happen if you start in the afternoon**
+# 
+# * pnc_screen only show a trend line for a backup instrument on 2019-03-22, though these were two backup instruments (PMPTSCREEN_3 and PMPTSCREEN_94)
 
-* pnc_screen only show a trend line for a backup instrument on 2019-03-22, though these were two backup instruments (PMPTSCREEN_3 and PMPTSCREEN_94)
+```
 
-```{r, fig.height=12}
+
+```{r, fig.height=12, eval=F}
+### --> update: 3 CO instruments weren't collocated all at once
+### --> update colo data ??
+
 p <- list()
 
 #give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
 
-for(i in seq_along(ap)) {
-  #i=2
-  
-  p[[i]] <- colo %>%
+#for(i in seq_along(ap)) {
+  #i=1
+   
+  #p[[i]] <-  
+    colo %>%
     
-    filter(variable == ap[i],
-           #only use rout data
+    filter(#variable == ap[i],
+           #only use route data
            grepl("R0", site)
            ) %>% #View()
     
     group_by(variable, #instrument_id, 
-             date) %>%
+             #date, 
+             runname) %>%
     #calculate time since start of run
     mutate(first_stop = min(time),
            time = as.numeric(difftime(time, first_stop, units = "hours")),
-           
-           ) %>%  # View()
+           first_stop = factor(first_stop)
+           ) %>% 
+    ungroup() %>% #View()
     
     ggplot(aes(x=time, y=value, 
                #col=factor(date),
-               #col=instrument_id, 
-               linetype=primary_instrument)) +
+               #linetype=instrument_id, 
+               linetype=primary_instrument
+               )) +
     facet_wrap(~variable, scales="free") +
-    geom_smooth(aes(col=factor(first_stop),), se=F,
-                alpha=0.8
-                ) +
-    geom_smooth(col="black") +
     
-    # geom_point(aes(col=factor(date)), alpha=0.8) + geom_line(aes(col=factor(date)), alpha=0.8) +
-    # geom_point() + geom_line() +
+      geom_smooth(aes(col= first_stop #factor(first_stop),
+      #col = runname
+                    ), se=F, alpha=0.8 ) +
+    #geom_smooth(col="black") +
     
-    labs(#title = "collocated instrument readings",
+   guides(col=F) +
+    
+    labs(
          x= "hours since first stop",
          col="1st Stop Time",
          linetype=""
          )  
   
-  p[[i]]
+  #p[[i]]
   
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 4) %>%
-  annotate_figure(top = "collocated instrument readings. black = overall trend")
+#   }
+# 
+# ggarrange(plotlist =  p, ncol = 2, nrow = 5) %>%
+#   annotate_figure(top = "collocated instrument readings. black = overall trend")
 
 ```
 
 
-# Update Data 
 
-**Stop level data**
 
-* dropped stop medians outside each instrument's reporting range b/c these readings are less trustworthy/accurate (kept readings at the second level since we will mainly be dealing w/ stop medians)
 
-* Dropped all co2_19 readings b/c    
-  * this instrument tends to report high values
-  * its values were higher than CO2_14 when they were collocated
-  * it was a backup instrument that was never used on its own
-
-* dropped SCAN 3 after 2019 when collocation readings looked different than SCAN 5
-  * we collected a few extra days of data with this instrument at the begining of the campiagn   
-  * SCAN 3 (Edmund's) was an older instrument    
-
-* if duplicate instruments were on the platform, calculate their median value
-
-**Second-level data**
-
-* see above for inclusion criteria   
-* note: extremes are still included in these data if stop medians were within an instrument's range
+# Calibrate Instruments based on duplicate collocations 
 
 ```{r}
+drop_ns3_v2 <- ymd("2019-04-01")
+
+drop_no2_1 <- ymd("2019-07-01")
+
+```
+
+
+* calibrations are done similar to before, with the reference instrument beign used as the independent variable (X). For the discminis, the mean of the two instruments is used as the independent variable.  
+
+* no need to calibrate backup instruments to eachother if:      
+  - there was a primary instrument used in the campaign the majority of the time and backup instruments produce similar readings during collocations    
+    * unscreened P-TRAKs   
+    * nephs   
+    * BC     
+  - other reasons:   
+    * screened PTRAKs screened since only two backup instruments were collocated (3 and 94), and both were in good agreement    
+    * CO instruments since none are in agreement with eachother    
+    * CO2 since backup instrument will be dropped       
+
+* if we don't have a primary instrument, however, readings should be calibrated to the average of both instruments based on collocations  
+  * discminis 
+
+* calibrate backup instruments when they deviate from the primary instrument using recent collocation data    
+  - calibrate NanoScan (ns) 3 to ns 5 using data collected before `r drop_ns3_v2` since 3 tends to read low and ns 3 values after this will be dropped anyways
+  - calibrate NO2_1 to NO2_2 using data collected before `r drop_no2_1`.     
+    * Note that some NO2_1 values become negative and will be dropped later.         
+  
+* calibrate neph readings to estimate PM2.5         
+
+**may update this ST neph calibration curve**
+
+```{r, eval=F}
+# last time backup instrument was used on route
+dt_stops3_colo_wide %>%
+  filter(
+    grepl("R0", site),
+    is.na(NO2_2) & !is.na(NO2_1)) %>%
+  summarize(
+    last_date = max(time)
+    )
+
+```
+
+
+```{r}
+###########################################################################################
+
+#NANOSCAN - using Scan 5 as the reference on 2019-03 since SCAN 3 was only used on its own on 2019-02
+
+ns_lm <- dt_stops3 %>%
+  filter(grepl("ns_total", variable),
+         #use data when instruments were still in good agreement
+         date < drop_ns3_v2
+         ) %>%
+  select(time, instrument_id, value) %>% 
+  spread(instrument_id, value) %>% 
+  drop_na() %>% 
+  lm(PMSCAN_3~PMSCAN_5, data = .) %>%
+  tidy() %>%
+  select(term, estimate) %>%
+  spread(term, estimate)
+  
+ns_5_int <- ns_lm$`(Intercept)`
+ns_5_slope <- ns_lm$PMSCAN_5
+
+###########################################################################################
+
+# NO2 - using NO2_2 as reference. last time No2_1 was used on its own was 2019-06-13
+
+no2_lm <- dt_stops3 %>%
+  filter(grepl("no2", variable),
+         date < drop_no2_1
+         ) %>%
+  select(time, instrument_id, value) %>% 
+  spread(instrument_id, value) %>% 
+  drop_na() %>%
+  lm(NO2_1~NO2_2, data = .) %>%
+  tidy() %>%
+  select(term, estimate) %>%
+  spread(term, estimate)
+  
+no2_2_int <- no2_lm$`(Intercept)`
+no2_2_slope <- no2_lm$NO2_2
+
+###########################################################################################
+
+# DISCMINIS
+disc_lm <- dt_stops3 %>%
+  filter(grepl("pmdisc_", variable)) %>%
+  select(time, instrument_id, value) %>% 
+  spread(instrument_id, value) %>% 
+  drop_na() %>%
+  #calculate mean reading when collocations happened
+  group_by(time) %>%
+  mutate(mean =  mean(c(PMDISC_3, PMDISC_8)))
+
+##disc 3
+disc_3_lm <- disc_lm %>%
+  lm(PMDISC_3~mean, data = .) %>%
+  tidy() %>%
+  select(term, estimate) %>%
+  spread(term, estimate)
+  
+mean_int_disc_3 <- disc_3_lm$`(Intercept)`
+mean_slope_disc_3 <- disc_3_lm$mean
+
+##disc 8
+disc_8_lm <- disc_lm %>%
+  lm(PMDISC_8~mean, data = .) %>%
+  tidy() %>%
+  select(term, estimate) %>%
+  spread(term, estimate)
+  
+mean_int_disc_8 <- disc_8_lm$`(Intercept)`
+mean_slope_disc_8 <- disc_8_lm$mean
+
+###########################################################################################
+
+```
+
+* estimates from Cooper's work. this might be updated
+
+```{r, echo=T}
+# NEPH   
+neph_int <- 1.060539
+## slope was for bscat x 10^-5, this is what it would be for bscat x 10^-4
+neph_slope <- 2.509793 *10
+
+```
+
+# Update Data 
+
+```{r, eval=F}
+dt_stops3 %>%
+  filter(grepl("no2", variable),
+         date < drop_no2_1
+         ) %>%
+  group_by(instrument_id) %>%
+  summarize(
+    min = min(value),
+    max = max(value)
+  )
+
+```
+
+### --> need to drop ns 3 values on/after 2020-02?
+
+```{r}
+bscat_unit_conv <- 10^4
+
 dt_stops4 <- dt_stops3 %>%
   #don't need instrument ranges anymore
   select(-c(Min, Max, Units)) %>%
   filter(
-    #drop all CO2_19 data
+    #drop bad CO2 instrument data 
     !instrument_id %in% c("CO2_19"),
-    #drop 2020 PMSCAN_3 data after 2019
-    !(instrument_id == "PMSCAN_3" & year(date) > "2019"),
+    #drop 2020 PMSCAN_3 data after 2019 - data will be not used anyways
+    !(instrument_id == "PMSCAN_3" & date >= drop_ns3),
          ) %>%
-  # #if multiple instruments on platform, use the median of the two medians
-   group_by_at(vars(-c(instrument_id, primary_instrument, value))) %>%
-   summarize(value = median(value)) %>%
-  ungroup()
-  
+  # calibrate instruments (for a second time)
+  rename(value_c1 = value) %>%  
+  mutate(
+    # convert bscat units to bscatx10^-4 (similar to DOE)
+    value_c1 = ifelse(grepl("neph", variable), value_c1*bscat_unit_conv, value_c1),
+    # adjust other readings
+    value =
+      # adjust PMSCAN_3 readings based on PMSCAN_5
+      ifelse(grepl("PMSCAN_3", instrument_id), (value_c1-ns_5_int)/ns_5_slope,
+             # adjust NO2_1 readings based on NO2_1
+             ifelse(grepl("NO2_1", instrument_id), (value_c1-no2_2_int)/no2_2_slope,
+                    #adjust discmini readings to the mean
+                    ifelse(grepl("PMDISC_3", instrument_id), (value_c1-mean_int_disc_3)/mean_slope_disc_3,
+                           ifelse(grepl("PMDISC_8", instrument_id), (value_c1-mean_int_disc_8)/mean_slope_disc_8,
+                                  #estimate PM2.5 from nephs
+                                  ifelse(grepl("neph", variable), value_c1*neph_slope + neph_int,
+                                         # value not calibrated a second time
+                                         value_c1
+                      )))))
+  )
 
-# note, this dataset could still have some extreme values (this hasn't been vetted as much as stop data)
-dt3 <- dt2 %>%
-  filter(
-    #drop all CO2_19 data
-    !instrument_id %in% c("CO2_19"),
-    #drop 2020 PMSCAN_3 data after 2019
-    !(instrument_id == "PMSCAN_3" & year(date) > "2019"),
-         )
-  
+
 ```
 
 
-# Instrument time trends (all data)
+### --> compare updated values to lab calibrations again. Are these better or at least not worse?
 
-* things look fine?    
-  * e.g., don't see extreme NO2 trends      
+```{r}
+
+
+
+
+```
+
+
+# Instrument time trends (using all the all data)
+
+* things look mostly fine except for CO?    
+  * CO has some extreme values
+  * e.g., don't see extreme NO2 trends 
+  * nanoscan 3 still has slightly lower readings, though these might be from later times which will not be used later if nanoscan 5 was also on the platform
+  
 * using log10 y scale since there are some extreme values 
-
 
 ```{r, fig.height=12}
 
@@ -1879,8 +2640,8 @@ dt_stops4 %>%
            ) %>%  
   {
     ggplot(., aes(x=time, y=value, 
-               #col=instrument_id, 
-               #linetype=primary_instrument
+               col=instrument_id, 
+               linetype=primary_instrument
                )) +
       facet_wrap(~variable, scales="free") +
       geom_smooth(se=F, alpha=0.8) +
@@ -1898,13 +2659,88 @@ dt_stops4 %>%
          )  
 }
 
+```
+
+# Update data 
+
+```{r}
+# DELETE comment? 
+# * dropped all CO data. PSCAA graphing tool indicates that hourly CO values are generally between 150-1000 ppb (0.150-1 ppm). These values may be too close to the instrument's meaurement range of 0 ppm (0.1 ppm = 100 ppb LOQ) 
+
+```
+
+
+* if multiple instruments were on the platform....    
+  a) and a primary instrument was used, use readings from the primary instrument.     
+  b) and both instruments were backups, use:   
+    * PTRAK 94 (instead if PTRAK 3), since this is used unscreend & has good agreement with other instruments   
+    * CO_190134 (instead of CO_3), since it has better agrement (R2) with CO_1      
+    
+```{r}
+temp <- dt_stops4 %>%
+  # #drop all CO data 
+  # filter(variable != "co_ppm") %>%
+  group_by(runname, date, time, location, stop_id, site, variable) %>%
+  mutate(
+    n = n(),
+    has_primary = grepl("Primary", paste(unique(primary_instrument), collapse = ",")),
+    ) %>%
+  ungroup()
+
+#only one instrument used
+df1 <- temp %>%
+    filter(n==1)
+
+#duplicate instruments used, including a primary instrument
+df2 <- temp %>%
+    filter((n==2 & has_primary==TRUE),
+      primary_instrument=="Primary")  
+
+#duplicate instruments used, neither of which are primary
+df3 <- temp %>%
+    filter((n==2 & has_primary==FALSE),
+      #select one "backup" instrument to use. PTRAK 94 is used unscreend & has good agreement with other instruments; CO_190134 has better agrement (R2) with CO_1 
+      instrument_id %in% c("PMPTSCREEN_94", "CO_190134")
+      )  
+  
+dt_stops5 <- rbind(df1, df2, df3) %>%
+  select(-c(n, has_primary)) %>%
+  arrange(time)
+
+```
+
+
+
+```{r, fig.height=12, eval=F}
+# new stop estimates 
+# 
+# * CO still has extreme values. So do some of the UFP instruments.
+
+p <- list()
+
+#summary table for labels
+df_sum <- dt_stops5 %>%
+  # add min/max labels
+  group_by(variable) %>%
+  summarize(
+    min = min(value),
+    max=max(value)
+    )  %>%
+  #make long format to avoid overlapping labels later
+  gather(kind, value, min,max)
+  
+dt_stops5 %>% 
+  ggplot(aes(x=value, col=variable),) + 
+  geom_density() + 
+  facet_wrap(~variable, scales="free") +
+  geom_text_repel(data=df_sum, aes(x=value, y=0, label=value), show.legend = F ) 
 
 ```
 
 
 # AQS sites 
 
-Looking at the ACT TRAP field protocol, it looks like BC, NO2 and neph (also neph PM2.5) values are collected every minute, though these are not officially validated like the hourly data are. We will use these instead of hourly data since we want to compare these readings to our 2-minute collocations.
+Looking at the ACT TRAP field protocol, it looks like BC, NO2 and neph (also neph PM2.5) values are collected every minute by DOE, though these are not officially validated like the hourly data are. We will use these instead of hourly data since we want to compare these readings to our 2-minute collocations.
 
 Note that BH and 10W don’t have minute data. BH has rolling 1-hour averages every 6 minutes for PM2.5 (teoms), while 10W seems to report the same thing every minute for about an hour (~58 min). 
 
@@ -1919,38 +2755,53 @@ We will have to use a mix of semi-hourly PM2.5 data and hourly data for BH and 1
 ```{r}
  
 #stop collocations
-dt_stops3_colo <- dt_stops4 %>%
+dt_stops3_colo_a <- dt_stops5 %>%
   filter(
     #pollutants also measured at AQS sites
-    variable %in% c("ma200_ir_bc1", "neph_bscat", "no2"),
+    variable %in% c("ma200_ir_bc1", "neph_bscat", "no2", "co_ppm"),
     #only keep collocation sites
-    grepl("MC", location)
-    ) %>% 
-
+    grepl("MC", location),
+    
+    # #TEST: don't include backup COs
+    # !instrument_id %in% c("CO_3", "CO_190134")
+    
+    ) %>%  
   #drop seconds from time stamp (for DOE merging). change default tz of UTC to LA
-  mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz),  #tz=mytz
-         #time = force_tz(time, tzone = mytz),
-         ) %>%  #View()
-  #if duplicate instruments, take mean value
-  group_by(date, time, location, variable) %>%
-  summarize(value = mean(value)) %>% 
-  ungroup() %>%
-  
-  spread(variable, value) %>%
-  arrange(time)  %>%
-  
+  mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz)) %>%
+  select(-c(instrument_id, primary_instrument, value_c1, value_raw)) %>%
+  spread(variable, value) %>%  
+  arrange(time)  %>%  
   #rename pollutants
   rename(BC = ma200_ir_bc1,
-         Neph = neph_bscat,
-         NO2 = no2
+         PM2.5 = neph_bscat,
+         NO2 = no2,
+         CO = co_ppm
          )  %>%
   mutate(
     # put in same units as DOE
     ##change from ng/m3 to ug/m3
     BC = BC/10^3,
-    ##change from bscat/m to (bscatx10^-4)/m
-    Neph = Neph*10^4
+    ## change from ppm to ppb
+    CO = CO*10^3
   )
+
+## same as above for neph bscat readings (not PM2.5)
+dt_stops3_colo_b <- dt_stops5 %>%
+  filter(
+    variable %in% c("neph_bscat"),
+    #only keep collocation sites
+    grepl("MC", location)
+    ) %>% 
+  #drop seconds from time stamp (for DOE merging). change default tz of UTC to LA
+  mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz)) %>%
+  select(-c(instrument_id, primary_instrument, value, value_raw)) %>%
+  spread(variable, value_c1) %>% 
+  arrange(time)  %>%  
+  #rename pollutants
+  rename(Neph = neph_bscat) %>%
+  mutate(Neph = Neph)  
+
+dt_stops3_colo <- left_join(dt_stops3_colo_a, dt_stops3_colo_b)
 
 # data from DOE
 doe_colo <- dt_stops3_colo %>%
@@ -1964,44 +2815,25 @@ doe_colo <- dt_stops3_colo %>%
   # doe data 
   left_join(doe2) %>%  
   #MC0406 not visited on 2020-03-13 06:41:00	
-  drop_na() %>%# View()
+  drop_na() %>% 
   #calculate 2-min median - same as avg for 2 numbers.
   group_by(date, location, location_doe, pollutant) %>%
   summarize(value=median(value)) %>% 
   #wide format
-  pivot_wider(names_from = pollutant, values_from = value, names_prefix = "doe_") #%>%
-  #don't have mobile monitoring equivalent
-  #select(-doe_PM2.5) 
+  pivot_wider(names_from = pollutant, values_from = value, names_prefix = "doe_")  
   
 #merge our estimates and doe estimates
 dt_doe <- left_join(dt_stops3_colo, doe_colo) 
   
-
 ```
 
-## Calibrate neph readings using DOE neph and PM2.5 observations
 
-* e.g., PM2.5 will be used for Kaya's disparities paper 
 
-- if our neph readings are similar to the readings from AQS sites (near 1-1 line), we'll use Cooper's calibration curve to estimate PM2.5 mass concentration from bscat. Alternatively, we can create a new calibration based on the PM2.5 readings at the AQS sites we visited during our campaign (?).
+## Calibrate neph readings  
 
-* see what how the DOE calibrates nephelometer readings to estimate PM2.5. Note that they do this at the site level.
+* here, we show that Copper's ST calibration curve is similar to the one we fit when we use DOE data for the study area and period alone.    
 
-```{r}
-# #doe2 #could use this, but have to filter specific sites that used npm25 for PM2.5 estimates
-# #
-# doe %>%
-#   select(-c(import_id, pollutant)) %>%
-#   filter(variable %in% c("doe_neph", "doe_npm25"),
-#          freq=="minute"
-#          ) %>% 
-#   spread(variable, value) %>% 
-#   
-#   colo.plot(x.variable = "doe_neph", y.variable = "doe_npm25", col.by="location_doe")
-
-```
-
-* fitting a calibration curve to PM2.5~Neph readings    
+* fit a calibration curve to DOE PM2.5~Neph readings    
   * **dropping values < 1st and > 99th quantile**
     * this made the lm fit R2 go from ~ 0.05 to ~0.5    
   * note that neph readings are very minute, while PM2.5 readings are estimated every hour, so these are not totally comparable. But we want neph readings at the minute level, since these will be much noisier (like our mobile data) ?
@@ -2009,10 +2841,6 @@ dt_doe <- left_join(dt_stops3_colo, doe_colo)
 ```{r}
 #lm fit
 doe_neph_calib <- doe %>%
-  # select(-c(import_id, pollutant)) %>%
-  # filter(variable %in% c("doe_neph", "doe_npm25"),
-  #        freq=="minute"
-  #        ) %>% 
   filter(
     # hour/day estimates may be largely aggregates of minute data 
     freq == "minute",
@@ -2021,7 +2849,7 @@ doe_neph_calib <- doe %>%
     pollutant %in% c("Neph", "PM2.5"),
     #don't inlcude neph-based pm2.5, which are calculated from the neph-PM2.5 calibration
     !variable %in% "doe_npm25"
-    ) %>% #View()
+    ) %>%  
   #if multiple PM2.5 readings at the same time and place, take the mean
   group_by(location_doe, location, time, pollutant) %>%
   summarize(value = mean(value)) %>%
@@ -2036,9 +2864,11 @@ doe_neph_calib <- doe %>%
 
 ```
 
-* there is a lot of noise in the neph readings, but there is a generally positive trend
 
-```{r}
+
+```{r, eval=F}
+# * there is a lot of noise in the neph readings, but there is a generally positive trend
+
 #plot takes long time to run
 print("black line is best fit line; blue line is smooth fit")
 
@@ -2056,48 +2886,18 @@ doe_neph_calib %>%
 
 ```
 
-* this slope is similar to Cooper's when we adjust his calibration curve, which uses bscat x 10^-5, to to bscat x 10^-4.
+* this slope is similar to Cooper's (int: `r neph_int`, slope: `r neph_slope`) when we adjust his calibration curve, which uses bscat x 10^-5, to to bscat x 10^-4.
 
 ```{r}
 
 doe_lm <- doe_neph_calib %>%
-  #changing the units changes the slope estimate, but not the intercept
-  #mutate(Neph = Neph*10) %>% 
   lm(PM2.5~Neph, data=.) 
 
 doe_lm %>% summary()
 
-doe_int <- tidy(doe_lm)$estimate[tidy(doe_lm)$term=="(Intercept)"]
-doe_slope <- tidy(doe_lm)$estimate[tidy(doe_lm)$term=="Neph"]
+# doe_int <- tidy(doe_lm)$estimate[tidy(doe_lm)$term=="(Intercept)"]
+# doe_slope <- tidy(doe_lm)$estimate[tidy(doe_lm)$term=="Neph"]
    
-```
-
-
-### --> if we use need to update calibration curve when Dave updates this.
-
-* using doe neph-pm2.5 calibration at three AQS sites since    
-  * these are at the minute level
-  * there are a lot of pairs?
-
-```{r, echo=T}
-#convert bscat ___/m to PM2.5 ug/m3 
-
-#estimates from Cooper's work. this will be updated based on what Dave Slager finds.
-int <- 1.060539
-# slope was for bscat x 10^-5, whereas here bscat is x 10^-4
-slope <- 2.509793 *10
-
-# estimates from DOE data (see above)  
-# int <- doe_int
-# slope <- doe_slope
-
-```
-
-```{r}
-dt_doe <- dt_doe %>%
-  #estimate PM2.5 from neph readings
-  mutate(PM2.5 = Neph*slope + int)
-
 ```
 
 
@@ -2106,15 +2906,17 @@ dt_doe <- dt_doe %>%
 * There are various discrepancies between DOE and mobile monitoring observations    
   * locations - these are not exaclty the same. Also, the MM vehicle does not always park in the exact same location    
   * instrument differences    
-    * all of our PM2.5 estimates come from neph estimates. DOE PM2.5 estimates compared here are both from nephelometer and other measurement methods.     
+    * all of our PM2.5 estimates come from neph estimates. DOE PM2.5 estimates compared here are from nephelometers when available (Duwamish, Kent, Tukwilla), otherwise from gravimetric and BAM (beta attenuation) methods (10W, BH)  
     * DOE uses site-specific neph-PM2.5 calibration curves. We will use a region calibraiton curve based on multiple AQS sites in the Spatiotemporal modeling region     
-      * our MM calibration curve from the ST model excludes Duwamish, even though we use it to predict PM2.5 at Duwamish in this analysis   
+      * our MM calibration curve from the ST model excludes Duwamish, even though we use it to predict PM2.5 at Duwamish in this analysis     
     * DOE PM2.5 "minute" readings are actually for longer time periods. For example, rolling 1-hr estimates that are updated every 6 min.
-    * the "2-min" median estimates have slightly different start and end times for the MM and DOE estimates. DOE estimates area alwyays exactly 2-min, starting at 00 seconds. MM median stops could have started after 00 seconds into the minute and could have been sligthly longer than 2 min (e.g., 3 min).
+    * the "2-min" median estimates have slightly different start and end times for the MM and DOE estimates. DOE estimates area alwyays exactly 2-min, starting at 00 seconds. MM median stops could have started after 00 seconds into the minute and could have been sligthly longer than 2 min (e.g., 3 min).    
+    
+* CO performs poorly. Performance was similarly poor when only CO_1 instrument data were compared to DOE readings.      
 
 ```{r}
 dt_doe_l <- dt_doe %>%
-  gather(pollutant, value, contains(c("BC", "Neph", "NO2", "PM2.5"))) %>% 
+  gather(pollutant, value, contains(c("BC", "Neph", "NO2", "PM2.5", "CO"))) %>% 
   mutate(
     source = ifelse(grepl("doe", pollutant), "DOE", "MM"),
     pollutant = gsub("doe_", "", pollutant)
@@ -2124,9 +2926,10 @@ dt_doe_l <- dt_doe %>%
 
 ```
 
+### --> do this for adjusted-specific instruments (e.g., NO2_1, ?NS3). compare valu_c1 to final value. are final values better or at least not worse? If adjustment is correct, it should be near 1-1 line. If this is true, we shoud keep negative values – this is our best estimate
+
 ```{r, fig.height=10}
 print("2-min mobile monitoring collocations at AQS sites")
-
 
 dt_doe_l %>%
   mutate(
@@ -2135,73 +2938,25 @@ dt_doe_l %>%
                                "BC" = "BC (ug/m3)",
                                "Neph" = "Neph (bscat [x 10^-4]/m)",
                                "NO2" = "NO2 (ppb)",
-                               "PM2.5" = "PM2.5 (ug/m3)"
+                               "PM2.5" = "PM2.5 (ug/m3)",
+                              "CO" = "CO (ppb)"
                                )
   ) %>%
-  
   ggplot(aes(x=DOE, y=MM, )) + 
-  facet_wrap_equal(~pollutant, scales="free") + 
-  geom_point(aes(col=location_doe)) + 
-  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
-  geom_smooth(aes(x=DOE, y=MM), method = "lm",inherit.aes = F ) + 
-  #geom_smooth(method = "lm", se=F) + 
+  facet_wrap_equal(~pollutant, scales="free") +
   theme(aspect.ratio = 1) + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
+  geom_point(aes(col=location_doe)) + 
+  geom_smooth(aes(x=DOE, y=MM), method = "lm",inherit.aes = F ) + 
+   stat_poly_eq(aes(label =  paste(stat(eq.label),
+                                  stat(rr.label), sep = "*\", \"*")),
+               formula = y~x, parse=T, #coef.digits = 2
+               ) +
   labs(
        y = "Mobile Monitoring",
        col = "AQS Site"
        )
    
-```
-
-```{r, fig.height=10, eval=F}
-# this has fit estimates on plots, but uses diff legends
-
-
-p <- list()
-
-#BC
-p[[1]] <- dt_doe %>%
-  colo.plot(x.variable = "doe_BC", y.variable = "BC", col.by = "location_doe", alpha_value = 0.8) +
-  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
-  labs(fill= "Overall Fit",
-       title = "BC (ug/m3)",
-       y = "Mobile Monitoring",
-       x = "DOE"
-       )
-
-#Neph
-p[[2]] <- dt_doe %>%
-  colo.plot(x.variable = "doe_Neph", y.variable = "Neph", col.by = "location_doe", alpha_value = 0.8) +
-  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
-  labs(fill= "Overall Fit",
-       title = "Nephelometer (bscat [x 10^-4]/m)",
-       y = "Mobile Monitoring",
-       x = "DOE"
-       )
-
-#PM2.5
-p[[3]] <- dt_doe %>%
-  colo.plot(x.variable = "doe_PM2.5", y.variable = "PM2.5", col.by = "location_doe", alpha_value = 0.8) +
-  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
-  labs(fill= "Overall Fit",
-       title = "PM2.5 (ug/m3)",
-       y = "Mobile Monitoring (neph estimate)",
-       x = "DOE"
-       )
-
-#NO2
-p[[4]] <- dt_doe %>%
-  colo.plot(x.variable = "doe_NO2", y.variable = "NO2", col.by = "location_doe", alpha_value = 0.8) +
-  geom_smooth(method = "lm", aes(group=location_doe, col=location_doe), se = F) +
-  labs(fill= "Overall Fit",
-       title = "NO2 (ppb)",
-       y = "Mobile Monitoring",
-       x = "DOE"
-       )
-  
-ggarrange(plotlist = p) %>%
-  annotate_figure(top = "2-min collocations (medians)")
-
 ```
 
 ```{r}
@@ -2222,7 +2977,6 @@ dt_doe_l %>%
 ```
 
 
-
 ## Annual Avg comparisons
 
 ```{r}
@@ -2235,7 +2989,7 @@ true_annual <- doe2 %>%
 
 short_term_annual <- dt_doe %>%
   #make long format
-  gather("pollutant", "value", matches(c("bc", "neph", "no2", "PM2.5"))) %>%   
+  gather("pollutant", "value", matches(c("bc", "neph", "no2", "PM2.5", "co"))) %>% 
   mutate(
     source = ifelse(grepl("doe", pollutant), "DOE", "Mobile Monitoring"),
     pollutant = gsub("doe_", "", pollutant)
@@ -2254,11 +3008,12 @@ true_annual <- left_join(true_annual, short_term_annual) %>%
 
 ```
 
-* annual average neph estimates are not great    
-  * though we only had 3 sites with neph readings, and the range was narrow (?)       
+* little data with a narrow range of values to compare annual average neph estimates  
 * neph-based PM2.5    
   * looks OK except for duwamish for MM campaign    
   * looks better for DOE since they fit site-specific calibration curves   
+  
+* mobile monitoring annual average CO estimates were poor compared to the true annual avearge  
 
 
 ```{r, fig.height=10}
@@ -2270,16 +3025,18 @@ true_annual %>%
                                "BC" = "BC (ug/m3)",
                                "Neph" = "Neph (bscat [x 10^-4]/m)",
                                "NO2" = "NO2 (ppb)",
-                               "PM2.5" = "PM2.5 (ug/m3)"
+                               "PM2.5" = "PM2.5 (ug/m3)",
+                              "CO" = "CO (ppb)"
                                )
   ) %>%
   
   ggplot(aes(x=true_avg, y=value, col=source)) + 
-  geom_point(aes(shape=location_doe)) + 
-  geom_smooth(method = "lm" ,se=F, aes()) + 
-  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
   facet_wrap_equal(~pollutant, scales="free") +
   theme(aspect.ratio = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
+  geom_line(stat="smooth", method = "lm", size = 0.5, alpha = 0.5) +
+  geom_point(aes(shape=location_doe), size=3) + 
+  
     labs(
          col = "2-min Est",
          shape = "Location",         
@@ -2334,8 +3091,6 @@ doe2 %>%
    
 ```
 
-
-
 When did we visit neph DOE sites? Checking that we conducted balanced sampling at these collocation sites.
 
 ```{r}
@@ -2384,25 +3139,19 @@ neph_colos %>%
 
 
 
-# Appendix
 
-## Calibrate to the mean of instrument readings
+# Update data
 
-* we will not do this since there was generally good agreement between instruments and some backup instruments were less trustworthy (e.g., NO2_1, PMSCAN_3, PMDISC_8 was dropped at one point before being replaced).
+* drop all CO data b/c it does not correlate well with: 
+  * other CO data from duplicate collocated instruments        
+  * DOE data 
 
-* note that the screened PTRAKS were not all collocated, though we know that 93 and 94 were similar when they were unscreened, and that 94 and 3 were similar, thus we will assume that at least 3/4 of the instruments were in good agrement. We don't have any collocation information for PTRAK 2, which collected a substantial amount of data.
+```{r}
+dt_stops6 <- dt_stops5 %>%
+  #drop all CO data
+  filter(!grepl("co_", variable))
 
-## Resources
-
-**email from Jill Schulte** regarding instrument QC: 
-
-* "I think you'll find much of the information you're looking for on our Information For Air Monitoring Professionals webpage: https://ecology.wa.gov/Regulations-Permits/Guidance-technical-assistance/Information-for-air-monitoring-professionals. If you open the "Other Procedures" tree, the document "Air Monitoring Documentation, Data Review, and Validation Procedure" has general information about how we validate data, apply completeness criteria, and use 1-minute averages for validation. You'll also find more specific information in each of our standard operating procedures for specific pollutants. You can open the SOP trees for gases and particulate matter instruments on the same page, and most have a "Data Validation and Quality Assurance" section. 
-* We also rely heavily on EPA's Quality Assurance Handbook for Air Pollution Measurement Systems Volume II: https://www.epa.gov/sites/production/files/2020-10/documents/final_handbook_document_1_17.pdf. "
-
-*ideas    
-  * comapre instrument readings to nearby stops (i.e., stations in the same air shed)     
-    * this may be misleading in our case b/c we can smooth out 2-min/instant readings, which may correctly show very different readings?   
-
+```
 
 
 # Final Data 
@@ -2412,20 +3161,36 @@ neph_colos %>%
 
 ```{r}
 original_data <- dt_stops
-final_data <- dt_stops4
+final_data <- dt_stops6
+
 ```
 
+* the proportion of data dropped 
+
 ```{r}
- original_data %>%
+
+# original_data %>%
+#   summarize(
+#     N_original = n()
+#   ) %>%
+#   cbind(summarize(final_data, N_final = n())) %>%
+#   mutate(
+#     N_dropped = N_original - N_final,
+#     Proportion_dropped = N_dropped/N_original
+#   ) %>%
+#   kable(caption = "All Stop data dropped (). N = total median stops readings = 8 instruments x 309 sites x ~29 stops/site", digits = 2) %>%
+#   kable_styling()
+
+original_data %>%
   summarize(
     N_original = n()
   ) %>%
-  cbind(summarize(final_data, N_final = n())) %>%
+  cbind(summarize(dt_stops5, N_final = n())) %>%
   mutate(
     N_dropped = N_original - N_final,
     Proportion_dropped = N_dropped/N_original
   ) %>%
-  kable(caption = "Stop data dropped. N = total median stops readings = 8 instruments x 309 sites x ~29 stops/site", digits = 2) %>%
+  kable(caption = "Stop data dropped (not including CO data). N = total median stops readings = 8 instruments x 309 sites x ~29 stops/site", digits = 2) %>%
   kable_styling()
 
 ```
@@ -2442,15 +3207,14 @@ original_data %>%
   summarize(N_original = n()) %>%
   left_join(n_final) %>%
   mutate(
+    N_final = ifelse(is.na(N_final), 0, N_final),
     N_dropped = N_original-N_final,
+    #N_dropped = ifelse(is.na(N_dropped), )
     Proportion_dropped = N_dropped/N_original
   ) %>%
   variable_relabel() %>%
   kable(caption = "Data dropped. N = number of stops", digits = 3) %>%
   kable_styling()
-
-
-
 
 ```
 
@@ -2459,22 +3223,79 @@ original_data %>%
 
 ```{r, eval=T}
 # median stop data 
-dt_stops4 %>%
-  #left_join(locations) %>%
-  saveRDS(., file.path("Data", "Output", "stop_data.rda"))
+saveRDS(final_data, file.path("Data", "Output", "stop_data.rda"))
 
 # #second data
 ## no need to save this if nothing changes really
 
-dt3 %>%
-  #left_join(locations) %>%
-  saveRDS(., file.path("Data", "Output", "second_data.rda"))
+# dt3 %>%
+#   #left_join(locations) %>%
+#   saveRDS(., file.path("Data", "Output", "second_data.rda"))
 
 # variables
-save(ap,
-     #neph calibration curve to be used  
-     int, slope,
-     file = file.path("Data", "Output", "common_vars.rda"))
+save(
+  ap,
+  #neph calibration curve to be used
+  neph_int, neph_slope,
+  file = file.path("Data", "Output", "common_vars.rda"))
 
 ```
+
+
+
+
+
+
+
+
+
+
+# Appendix
+
+## Calibrate to the mean of instrument readings
+
+* we will not do this since there was generally good agreement between instruments and some backup instruments were less trustworthy (e.g., NO2_1, PMSCAN_3, PMDISC_8 was dropped at one point before being replaced).
+
+* note that the screened PTRAKS were not all collocated, though we know that 93 and 94 were similar when they were unscreened, and that 94 and 3 were similar, thus we will assume that at least 3/4 of the instruments were in good agrement. We don't have any collocation information for PTRAK 2, which collected a substantial amount of data.
+
+## Notes on Hank's CO Work
+
+Amanda: "...Hank was seeing no correlation between measurements from mobile monitoring and at agency locations, and Jim was seeing really bad correlations between co-located monitors in the vehicle.  The calibration data was really different between the two instruments, but it seemed reproducible in the lab, but then in the vehicle there were a bunch of really strong temperature effects."
+
+## Fieldnotes and instrument warnings 
+
+* look at these notes throughout as we encounter issues. We can look at the field or lab notebook notes if things look wrong before deciding to drop data (e.g., how some PMPT lab data were dropped)         
+* see QAQC.html doc that Amanda and Kaya have worked on    
+  * most instrument error codes don't have "use" indicators to clarify whether that data should be used or not though (as of 5/11/21)      
+
+```{r, eval=F}
+fieldnotes2 <- fieldnotes %>%
+  #only look at stop data w/ notes
+  filter(
+    str_detect (site_id, regex("^MS|MC", ignore_case = T)),
+    !is.na(notes),  
+    !notes %in% c("", ".", "\\")
+  )
+
+
+```
+
+
+## ONA Correction
+
+* The ONA correction averages based on change in attenuation (different than when you do a time avg). It accounts for change in sensitivity. You are saying that there is a non-linear change in noise and want to avg based on incremental changes in filter. Elena's code shifts every 5% change in attenuation.
+
+* We don’t want to do the ONA correction b/c this would include time points across more space when using the moving data. For consistency, we thus will not do this.
+
+
+## Resources
+
+**email from Jill Schulte** regarding instrument QC: 
+
+* "I think you'll find much of the information you're looking for on our Information For Air Monitoring Professionals webpage: https://ecology.wa.gov/Regulations-Permits/Guidance-technical-assistance/Information-for-air-monitoring-professionals. If you open the "Other Procedures" tree, the document "Air Monitoring Documentation, Data Review, and Validation Procedure" has general information about how we validate data, apply completeness criteria, and use 1-minute averages for validation. You'll also find more specific information in each of our standard operating procedures for specific pollutants. You can open the SOP trees for gases and particulate matter instruments on the same page, and most have a "Data Validation and Quality Assurance" section. 
+* We also rely heavily on EPA's Quality Assurance Handbook for Air Pollution Measurement Systems Volume II: https://www.epa.gov/sites/production/files/2020-10/documents/final_handbook_document_1_17.pdf. "
+
+*ideas    
+  * comapre instrument readings to nearby stops (i.e., stations in the same air shed)     
+    * this may be misleading in our case b/c we can smooth out 2-min/instant readings, which may correctly show very different readings?   
 
