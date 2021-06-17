@@ -14,6 +14,17 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
+
+```{r, eval=F}
+#update 
+pacman::p_load(gitcreds)
+
+gitcreds::gitcreds_set() # select '2' and enter new token
+
+```
+
+
+
 # Overview 
 
 **Purpose**:   
