@@ -18,7 +18,8 @@ editor_options:
 
 **Purpose**:   
 
-* This script documents the quality control (QC) procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. 
+* This script documents the quality control (QC) procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. It is on [GitHub](github.com/magali17/OurCampaign.git).
+ 
 
 **QC Steps** 
 
