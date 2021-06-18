@@ -15,21 +15,18 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r, eval=F}
-#update 
-pacman::p_load(gitcreds)
-
+```{r, eval=F, echo=F}
+#update credentials to use token instead of old passowrd
 gitcreds::gitcreds_set() # select '2' and enter new token
 
 ```
-
 
 
 # Overview 
 
 **Purpose**:   
 
-* This script documents the quality control (QC) procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. It is on [GitHub](github.com/magali17/OurCampaign.git).
+* This script documents the quality control (QC) procedures taken to ensure data quality after the ACT TRAP mobile monitoring campaign. This code is on [GitHub](github.com/magali17/OurCampaign.git).
  
 
 **QC Steps** 
@@ -187,6 +184,7 @@ common variables & functions
 ```{r}
 #functions
 source("0_Functions.R")
+source("format_db_flags.R")
 
 mytz <- "America/Los_Angeles"
 
@@ -886,6 +884,8 @@ for(i in seq_along(calib_instrument_ids)) {
 
   * Note that this drops  a lot of data but the instruments took a while to stabilize. Questions about their reliability for 2-min stops...? 
   
+* also dropped additional initial readings for NO2_1 that took a while to stabilize 
+
 * We still see a very unstable reading for NO2_2 on 2019-04-15 ~ 13:00. There are no notes explaining this in the calibration notebook. It looks like the refernce concentration jump from 0 ppb to 80 ppb may have been too large for the NO2_2 instrument, particularly if it was not warmed up for long prior to doing so. Note, this was also the first in lab NO2 calibratiobn for our campaign, so we may have still been learning how to properly calibrate the instrument. The instrument starts to stabilize ~ 45 min into the 80 ppb session, but then falls again. Readings are more in line with other reference concentrations afterwards. **We will drop the 80 ppb reference concentration b/c the jump in concentration may have been too much for the instrument, particulalry if the instrument was not warmed up.** There's an argument to be made for also dropping the first 0 reading, but it shouldn't make a difference since the our calibration curves won't take that into account.
 
 ```{r, echo=T}
@@ -895,53 +895,7 @@ end_lag <- 60 # 1 min
 
 ```
 
-```{r, test, eval=F}
-test <- calibrations_table0 %>%
-  
-  filter(grepl("PM25_", instrument_id)) %>% 
-  
-  
-  
-  #drop these data so not confused w/ no2 when merging
-  filter(!analyte %in% c("nox", "no"),
-         #drop these problematic/unstable No2_2 readings (see note above)
-         !(instrument_id == "NO2_2" & runname == "2019-04-15_LABC" & conc == 80)
-         ) %>%
-    #some instruments (esp NO2) have a lag response period. wait a few seconds before using the data
-    mutate(timeint = timeint + start_lag,
-           endtime = endtime-end_lag
-           ) %>%
-    #one time gets dropped. there is an error/instrument restart note.
-    filter(timeint < endtime) %>%
-  
-  #is this causing merging issues b/c they're different??
-  select(-c(import_id,# id
-            )) %>%
-  distinct() #%>%
-  
-  # #make calibration table long format
-  #   rowwise() %>%
-  #   mutate(time = list(seq(timeint, endtime, 1))) %>%
-  #   ungroup() %>%
-  #   select(-timeint, -endtime) %>%
-  #   unnest(cols=c(time)) %>%
-  #   arrange(time)
-
-test_room_calib_dt <- room_calibrations_data %>%
-  filter(grepl("PM25_", instrument_id),
-         #grepl("2019-11-13", runname)
-         )
-
-room_calibrations_data %>%
-  group_by(variable, instrument_id) %>%
-  summarize(
-    min = min(time),
-    max = max(time)
-  )
-  
-```
-
-
+ 
 ```{r, fig.height=10}
 
 calibrations <- calibrations_table0 %>%
@@ -981,7 +935,20 @@ calibrations <- calibrations_table0 %>%
     
      # these filter on/off times are wrong in the databaes, from looking at the calibration notebook notes
     !(instrument_id == "PMPT_94" & time > "2019-10-02 14:04" & time < "2019-10-02 15:00" ),
-    !(instrument_id == "PMSCAN_5" & time > "2019-10-02 14:04" & time < "2019-10-02 14:10:10")
+    !(instrument_id == "PMSCAN_5" & time > "2019-10-02 14:04" & time < "2019-10-02 14:10:10"),
+    
+    # intrument takes long time to stabilize here
+    #drop these problematic/unstable No2_2 readings (see note above)
+    !(instrument_id == "NO2_2" & runname == "2019-04-15_LABC" & conc == 80),
+    !(instrument_id == "NO2_2" & time > "2019-05-06 15:07:00" & time < "2019-05-06 15:15:00"),
+    !(instrument_id == "NO2_2" & time > "2019-05-22 11:40:00" & time < "2019-05-22 12:00:00"),
+    !(instrument_id == "NO2_2" & time > "2019-05-31 12:14:00" & time < "2019-05-31 12:17:00"),
+    !(instrument_id == "NO2_2" & time > "2019-05-31 12:44:00" & time < "2019-05-31 12:50:00"),
+    !(instrument_id == "NO2_2" & time > "2019-08-07 10:35:00" & time < "2019-08-07 10:46:00"),
+    
+    !(instrument_id == "NO2_1" & time > "2019-03-06 19:15:00" & time < "2019-03-06 19:24:00"),
+    !(instrument_id == "NO2_1" & time > "2020-01-14 14:14:00" & time < "2020-01-14 14:20:00"),
+
     ) %>%   
   drop_na(value)
 
@@ -993,7 +960,7 @@ calibrations <- calibrations_table0 %>%
 p <- list()
 
 for(i in seq_along(calib_instrument_ids)) {
-  #i=8  
+  #i=7  
   
   #if there are data for this instrument..
   obs <- calibrations %>%
@@ -1517,7 +1484,9 @@ calibrations %>%
 ```
 
 
-# Aethalometer Attenuation
+# Aethalometers
+
+## Filter attenuation 
 
 * checking the filter attenouation (uv_atn1 is what triggers the tape). If the attenuation is > 50%, the filter is less sensitive and could account for the zero readings. If this is true, we would want to drop these data. 
 
@@ -1565,18 +1534,59 @@ ma200 %>%
 ```
 
 
-
-### --> ? Check other error codes (low flow etc). get the % (avg of binary) flag for any given stop. e.g., if 1% of the data has low flow error, may not need to worry  
+## Error codes
 
 * older sources that are slightly different 
   * the [mm_trap_qaqc repository](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/format_db_flags.R)   
-  * Amanda's QAQC html only has status values (not always numerical) for some of the instruments (as of 2021-06-11)   
+  * see Amanda's draft of [QAQC.Rmd](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/QAQC.Rmd) documentation. This is also under trap\QAQC\qaqc_report_code\QAQC.Rmd. 
+
 
 ```{r}
+# see documentation on server: trap\QAQC\qaqc_report_code\QAQC.Rmd
 
+#The way the error code works for the MA200 is based on using a base-2 number string, which includes a bunch of binary indicators (so something like 011010), which appears as base 10 in the database (something like 512).  Some of these numbers will represent combinations of multiple codes
 
+library(data.table)
 
+bc_errors <- dt %>% 
+  filter(grepl("ma200", variable)) %>% 
+  setDT() %>% 
+  ma200.status.all() %>%
+  as.tibble()
+
+detach(package:data.table)
+  
+bc_errors %>%
+  #calculate arrival time at any stop. also ensure that duplicate instruments are aligned correctly
+  group_by(runname, date, location, stop_id) %>%
+  #only keep first 3 min of data at each stop
+  filter(time- min(time) <= max_stop_duration) %>%
+  mutate(time = min(time)) %>%
+  #calculate proportion of time with errors for any given stop
+  group_by(runname, date, time, location, stop_id, site, instrument_id, variable, primary_instrument) %>%
+  summarize_at(ma200.flags, mean) %>%
+  ungroup() %>%
+  gather(error, value, ma200.flags) %>%  
+  group_by(error) %>%
+  summarize(
+    N = n(),
+    Min = min(value),
+    Q25 = quantile(value, 0.25),
+    Median = median(value),
+    Q75 = quantile(value, 0.25),
+    Max = max(value),
+    
+    n_with_error = sum(value >0),
+    prop_with_error = n_with_error/N
+  ) %>%
+  kable(caption="Distribution of the proportion of time during any given stop with MA200 error messages. N = number of stops.", digits = 2) %>%
+  kable_styling()
+  
+  
 ```
+
+
+
 
 
 # Summary of all raw data 
@@ -1666,8 +1676,6 @@ for(i in seq_along(ap)) {
          linetype = "Instrument",
          col = "ID"
          )
-   
-    
   
   #p[[i]]
   
@@ -2364,83 +2372,46 @@ colo <- colo %>%
 #unique(colo$instrument_id)
 
 ```
-
-```{r}
-# * **things look good? would expect concentrations to increase as the day goes on if you depart early on, and the opposite to happen if you start in the afternoon**
-# 
-# * pnc_screen only show a trend line for a backup instrument on 2019-03-22, though these were two backup instruments (PMPTSCREEN_3 and PMPTSCREEN_94)
-
-```
-
-
-```{r, fig.height=12, eval=F}
-### --> update: 3 CO instruments weren't collocated all at once
-### --> update colo data ??
-
-p <- list()
-
-#give each facet its own instrument_id legend. make plot in loop b/c various things are done to df before plotting. 
-
-#for(i in seq_along(ap)) {
-  #i=1
-   
-  #p[[i]] <-  
-    colo %>%
-    
-    filter(#variable == ap[i],
-           #only use route data
-           grepl("R0", site)
-           ) %>% #View()
-    
-    group_by(variable, #instrument_id, 
-             #date, 
-             runname) %>%
-    #calculate time since start of run
-    mutate(first_stop = min(time),
-           time = as.numeric(difftime(time, first_stop, units = "hours")),
-           first_stop = factor(first_stop)
-           ) %>% 
-    ungroup() %>% #View()
-    
-    ggplot(aes(x=time, y=value, 
-               #col=factor(date),
-               #linetype=instrument_id, 
-               linetype=primary_instrument
-               )) +
-    facet_wrap(~variable, scales="free") +
-    
-      geom_smooth(aes(col= first_stop #factor(first_stop),
-      #col = runname
-                    ), se=F, alpha=0.8 ) +
-    #geom_smooth(col="black") +
-    
-   guides(col=F) +
-    
-    labs(
-         x= "hours since first stop",
-         col="1st Stop Time",
-         linetype=""
-         )  
-  
-  #p[[i]]
-  
-#   }
-# 
-# ggarrange(plotlist =  p, ncol = 2, nrow = 5) %>%
-#   annotate_figure(top = "collocated instrument readings. black = overall trend")
-
-```
-
-
+ 
 
 
 
 # Calibrate Instruments based on duplicate collocations 
 
-```{r}
-drop_ns3_v2 <- ymd("2019-04-01")
+when were NanoScan3 and NO2_1 used on their own?
 
-drop_no2_1 <- ymd("2019-07-01")
+```{r}
+#nanoscan
+dt_stops3 %>%
+  filter(grepl("ns_", variable)) %>%
+  group_by(date) %>%
+  summarize(backup_only = paste(unique(instrument_id), collapse = ", ") ==  "PMSCAN_3") %>%
+  filter(backup_only==TRUE) %>%
+  summarize(
+    first_time = min(date),
+    last_time = max(date)
+  ) %>%
+  kable(caption = "When NanoScan 3 was used on its own. (The next collocation happened end of March)") %>%
+  kable_styling()
+
+dt_stops3 %>%
+  filter(grepl("no2", variable)) %>%
+  group_by(date) %>%
+  summarize(backup_only = paste(unique(instrument_id), collapse = ", ") ==  "NO2_1") %>%
+  filter(backup_only==TRUE) %>%
+  summarize(
+    first_time = min(date),
+    last_time = max(date)
+  ) %>%
+  kable(caption = "When NO2_1 was used on its own. The next collocation was a few days later") %>%
+  kable_styling()
+
+```
+
+```{r}
+#most recent collocation data is used for instrument calibrations  
+drop_ns3_v2 <- ymd("2019-04-01") 
+drop_no2_1 <- ymd("2019-04-01")   #ymd("2019-07-01")
 
 ```
 
@@ -2461,9 +2432,9 @@ drop_no2_1 <- ymd("2019-07-01")
   * discminis 
 
 * calibrate backup instruments when they deviate from the primary instrument using recent collocation data    
-  - calibrate NanoScan (ns) 3 to ns 5 using data collected before `r drop_ns3_v2` since 3 tends to read low and ns 3 values after this will be dropped anyways
+  - calibrate NanoScan (ns) 3 to ns 5 using data collected before `r drop_ns3_v2` since 3 tends to read low and ns 3 values after this will not be used anyways since nanoscan 5 readings exist
   - calibrate NO2_1 to NO2_2 using data collected before `r drop_no2_1`.     
-    * Note that some NO2_1 values become negative and will be dropped later.         
+    * Note that some NO2_1 values become negative 
   
 * calibrate neph readings to estimate PM2.5         
 
@@ -2481,9 +2452,8 @@ dt_stops3_colo_wide %>%
 
 ```
 
-
 ```{r}
-###########################################################################################
+# calibrate instruments using the most recent collocation data 
 
 #NANOSCAN - using Scan 5 as the reference on 2019-03 since SCAN 3 was only used on its own on 2019-02
 
@@ -2564,26 +2534,14 @@ mean_slope_disc_8 <- disc_8_lm$mean
 # NEPH   
 neph_int <- 1.060539
 ## slope was for bscat x 10^-5, this is what it would be for bscat x 10^-4
-neph_slope <- 2.509793 *10
+neph_slope <- 2.509793 * 10
 
 ```
 
 # Update Data 
 
-```{r, eval=F}
-dt_stops3 %>%
-  filter(grepl("no2", variable),
-         date < drop_no2_1
-         ) %>%
-  group_by(instrument_id) %>%
-  summarize(
-    min = min(value),
-    max = max(value)
-  )
+ 
 
-```
-
-### --> need to drop ns 3 values on/after 2020-02?
 
 ```{r}
 bscat_unit_conv <- 10^4
@@ -2594,7 +2552,7 @@ dt_stops4 <- dt_stops3 %>%
   filter(
     #drop bad CO2 instrument data 
     !instrument_id %in% c("CO2_19"),
-    #drop 2020 PMSCAN_3 data after 2019 - data will be not used anyways
+    #drop 2020 PMSCAN_3 data after 2019 since these are not in line w/ nanoscan 5. these data will be not used anyways b/c nanoscan 5 data exist
     !(instrument_id == "PMSCAN_3" & date >= drop_ns3),
          ) %>%
   # calibrate instruments (for a second time)
@@ -2604,10 +2562,10 @@ dt_stops4 <- dt_stops3 %>%
     value_c1 = ifelse(grepl("neph", variable), value_c1*bscat_unit_conv, value_c1),
     # adjust other readings
     value =
-      # adjust PMSCAN_3 readings based on PMSCAN_5
-      ifelse(grepl("PMSCAN_3", instrument_id), (value_c1-ns_5_int)/ns_5_slope,
+      # adjust earliest PMSCAN_3 readings based on PMSCAN_5
+      ifelse(grepl("PMSCAN_3", instrument_id) & date < drop_ns3_v2, (value_c1-ns_5_int)/ns_5_slope,
              # adjust NO2_1 readings based on NO2_1
-             ifelse(grepl("NO2_1", instrument_id), (value_c1-no2_2_int)/no2_2_slope,
+             ifelse(grepl("NO2_1", instrument_id) & date < drop_no2_1, (value_c1-no2_2_int)/no2_2_slope,
                     #adjust discmini readings to the mean
                     ifelse(grepl("PMDISC_3", instrument_id), (value_c1-mean_int_disc_3)/mean_slope_disc_3,
                            ifelse(grepl("PMDISC_8", instrument_id), (value_c1-mean_int_disc_8)/mean_slope_disc_8,
@@ -2622,11 +2580,42 @@ dt_stops4 <- dt_stops3 %>%
 ```
 
 
-### --> compare updated values to lab calibrations again. Are these better or at least not worse?
+* checking that only earlier NO2 values were changed. Looks good, though pre calibration values for 2019-02 were near 0 before and are < 0 now
+
+```{r}
+# calibrations 
+dt_stops4 %>%
+  filter(instrument_id == "NO2_1") %>%
+  mutate(ym = substr(date, 1,7),) %>%  
+  ggplot(aes(x=value_c1, y=value,)) + 
+  facet_wrap(~ym, ) + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
+  geom_point(alpha=0.3) + 
+  labs(title = "NO2 values pre & post recalibration",
+       x = "Pre Calibration Conc (ppb)",
+       y = "Post Calibration Conc (ppb)"
+       )
+
+```
+
+### --> issue: post 2nd calibration, instrument readings are further from the true concentration since they were already low and they are further reduced
+
+* note: AQS plots below, however, show that the second calibration does get NO2 slightly closer to the readings from AQS sites
 
 ```{r}
 
-
+calibrations %>%
+    filter(instrument_id == "NO2_1",
+           date(time) == "2019-03-06"
+           ) %>%
+  #estimated what value would have been if we calibrate to the NO2 collocation that occurs soon after this
+  mutate(value2 = (value - no2_2_int)/no2_2_slope) %>%
+  rename(pre_instrument_calib = value, post_instrument_calib = value2, true_conc = conc) %>%
+  gather("calibration", "value", contains("calib"), true_conc) %>%  
+  
+  ggplot(aes(x=time, y = value, col=calibration)) + 
+  facet_wrap(~time) +
+  geom_point()
 
 
 ```
@@ -2807,6 +2796,7 @@ dt_stops3_colo_b <- dt_stops5 %>%
   #drop seconds from time stamp (for DOE merging). change default tz of UTC to LA
   mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz)) %>%
   select(-c(instrument_id, primary_instrument, value, value_raw)) %>%
+  #usine neph, not pm2.5 estimates here
   spread(variable, value_c1) %>% 
   arrange(time)  %>%  
   #rename pollutants
@@ -2838,6 +2828,46 @@ doe_colo <- dt_stops3_colo %>%
 dt_doe <- left_join(dt_stops3_colo, doe_colo) 
   
 ```
+
+```{r}
+# repeat for NO2_1 only to compare values after the first and "second" calibration
+ 
+no2_test <- dt_stops5 %>%
+  filter(
+    instrument_id=="NO2_1",
+    #only keep collocation sites
+    grepl("MC", location)
+    ) %>% 
+  #drop seconds from time stamp (for DOE merging). change default tz of UTC to LA
+  mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz)) %>% 
+  select(-c(value_raw)) %>%
+  rename(value_c2=value)
+   
+# data from DOE
+no2_test_b <- no2_test %>%
+  #also pull 2nd minute from DOE data
+  mutate(time = time+60) %>%
+  #add start time (1 min earlier)
+  rbind(no2_test,.) %>%
+  #collocation times & places
+  select(time, location) %>%
+  arrange(time) %>% 
+  # doe data 
+  inner_join(filter(doe2, pollutant=="NO2")) %>%  
+  #MC0406 not visited on 2020-03-13 06:41:00	
+  drop_na() %>% 
+  #calculate 2-min median - same as avg for 2 numbers.
+  group_by(date, location, location_doe, pollutant) %>%
+  summarize(value=median(value)) %>%
+  #wide format
+  pivot_wider(names_from = pollutant, values_from = value, names_prefix = "doe_")  
+  
+#merge our estimates and doe estimates
+no2_test_c <- inner_join(no2_test, no2_test_b) %>%
+  gather(variable, value, contains("value"))
+ 
+```
+
 
 
 
@@ -2938,8 +2968,6 @@ dt_doe_l <- dt_doe %>%
 
 ```
 
-### --> do this for adjusted-specific instruments (e.g., NO2_1, ?NS3). compare valu_c1 to final value. are final values better or at least not worse? If adjustment is correct, it should be near 1-1 line. If this is true, we shoud keep negative values – this is our best estimate
-
 ```{r, fig.height=10}
 print("2-min mobile monitoring collocations at AQS sites")
 
@@ -2987,6 +3015,27 @@ dt_doe_l %>%
         ) %>%
   kable_styling()
 ```
+
+
+### NO2 before and after the second calibration based on collocated instruments
+
+* showing that NO2_1 instrument readings are slightly better (more similar to AQS collocations) after adjusting No2_1 to NO2_2 readings, though low reading are below the 1-1 line. **We'll thus keep the negative NO2_1 readings since those are our best estimate of the true concentration.**
+
+* this is only at two sites (N=1 AQS collocation per site)
+
+```{r}
+no2_test_c %>%
+  ggplot(aes(x=doe_NO2, y=value, col=variable, shape=location_doe)) + 
+  geom_point() + 
+  geom_abline(slope = 1, intercept = 0) + 
+  labs(
+    title = "NO2_1 values after calibrations. c1: gas ref calibration; c2: NO2_2 colo calibration",
+    col = "Calibration #"
+  )
+
+```
+
+
 
 
 ## Annual Avg comparisons
@@ -3235,6 +3284,7 @@ original_data %>%
 
 ```{r, eval=T}
 # median stop data 
+## units: nephs read bscatx10^-4 (similar to DOE). 
 saveRDS(final_data, file.path("Data", "Output", "stop_data.rda"))
 
 # #second data
