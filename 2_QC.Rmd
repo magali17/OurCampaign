@@ -51,6 +51,10 @@ gitcreds::gitcreds_set() # select '2' and enter new token
 
 * checked that aethalometer attenuation as < 50% at all times. This is when the instrument is most sensitive to detecting concentration changes.  
 
+* dropped instrument readings with bad status codes:   
+  * MA200: flow error or optical saturation codes     
+  * NO2: automatic in-field, baseline measurements   
+
 * calculated site concentration medians. All subsequent analyses were done at the stop-level. 
 
 * dropped untrustworthy site medians:   
@@ -242,7 +246,6 @@ load(file.path("Data", "Original", "locations_table.rda"))
  
 ```
  
-### --> need to do?? *  dropped PMPT_94 when time >= "2019-04-18 11:48:00" & time < "2019-04-18 12:12:00" in LABC. Paper lab notebook states that this PTRAK had alcohol wick issues. Instrument 94 also reads higher than 93.
 
 ```{r}
 #will mege these later after adding a lag period to tables
@@ -329,11 +332,7 @@ ma200 <- readRDS(file.path("Data", "Original", "ma200_data.rda")) %>%
 
 ```
 
-```{r}
-# any(dt0$location == "MS0000")
-# any(ma200$location == "MS0000")
-```
-
+ 
 
 ```{r}
 ### --> DELETE??
@@ -690,6 +689,169 @@ dt0 %>%
 
 # Quality Assurance 
 
+
+## Status codes
+
+### Aethalometers 
+
+* older sources that are slightly different 
+  * the [mm_trap_qaqc repository](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/format_db_flags.R)   
+  * see Amanda's draft of [QAQC.Rmd](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/QAQC.Rmd) documentation. This is also under trap\QAQC\qaqc_report_code\QAQC.Rmd. 
+
+* will drop the following flags
+
+```{r}
+drop_bc_flags <- c("unstable_flow", 
+                   #Also drop these? There are no observations  with these in this dataset either way
+                   "flow_range", "optical_sat" 
+                   )
+```
+
+
+```{r}
+# see documentation on server: trap\QAQC\qaqc_report_code\QAQC.Rmd
+
+#The way the error code works for the MA200 is based on using a base-2 number string, which includes a bunch of binary indicators (so something like 011010), which appears as base 10 in the database (something like 512).  Some of these numbers will represent combinations of multiple codes
+
+library(data.table)
+
+bc_errors <- dt0 %>% 
+  filter(grepl("ma200", variable)) %>% 
+  setDT() %>% 
+  ma200.status.all() %>%
+  as.tibble()
+
+detach(package:data.table)
+
+# table summarizing flags found
+bc_errors %>%
+  select(instrument_id, time, ma200.flags) %>%
+  gather(error, value, ma200.flags) %>%
+  group_by(error) %>%
+  summarize(
+    N_total = n(),
+    N_with_flags = sum(value==1),
+    Prop = mean(value),
+  ) %>%
+  kable(caption = "MA200 status flags. N = number of 10-sec measurements.",
+        digits = 4) %>%
+  kable_styling()
+
+
+# status 640. could drop this, but not sure if this can occurr elsewhere as well.
+drop_bc <- bc_errors %>%
+  select(instrument_id, time, ma200.flags) %>%
+  gather(error, value, ma200.flags) %>%
+  filter(error %in% drop_bc_flags & value==1
+         ) %>%
+  select(instrument_id, time)
+  
+```
+
+### NO2
+
+* drop NO2 in field, baseline adjustments
+
+```{r}
+#these are the only 'measurement' (vs zero) flgs that are good
+keep_no2_flags <- c("10004", "10104" ) 
+
+dt0 %>%
+  filter(variable == "no2") %>% 
+  group_by(instrument_id) %>%
+  mutate(n_total = n()) %>%
+  mutate(Reading = ifelse(status %in% keep_no2_flags, "measurement", "zero")) %>%
+  group_by(Instrument = instrument_id, Reading) %>%
+  summarize(
+    N = n(),
+    'Instrument Proportion' = N/unique(n_total)
+  ) %>%
+  kable(caption = "proportion of NO2 data with usable readings (i.e., true measurements vs zero readings)",
+        digits = 3
+        ) %>%
+  kable_styling()
+
+
+```
+
+
+### Update Data
+
+**Drop bad status codes**
+
+* bad flags that will be dropped
+
+```{r}
+paste("Bad BC flags:", paste(drop_bc_flags, collapse = ", "))
+
+paste("Good NO2 flags indicating true measurements (vs e.g., baseline readings):", paste(keep_no2_flags, collapse = ", "))
+
+```
+
+
+```{r}
+dt <- dt0 %>%
+  filter(
+    #drop NO2_2 field zeros 
+    !(variable == "no2" & !status %in% keep_no2_flags),
+  ) %>%
+  # drop few MA200 readings w/ errors
+  anti_join(drop_bc)
+
+
+```
+
+
+## Aethalometer Filter attenuation 
+
+* checking the filter attenouation (uv_atn1 is what triggers the tape). If the attenuation is > 50%, the filter is less sensitive and could account for the zero readings. If this is true, we would want to drop these data. 
+
+* everything looks fine. Most of the UV wavelength readings are far from 50% attenuation.
+
+```{r}
+# table
+ma200 %>% 
+  filter(variable == "ma200_uv_atn1") %>% 
+  group_by(instrument_id) %>%
+  summarize(
+    N = n(),
+    Min = min(value),
+    Q25 = quantile(value, 0.25),
+    Median = median(value),
+    Q75 = quantile(value, 0.75),
+    Max = max(value)
+  ) %>%
+  kable(caption = "Aethalometer UV attenuation readings. N = number of 10-sec readings.") %>%
+  kable_styling()
+  
+```
+
+
+* there doesn't seem to be an association between low BC readings and attenuation (UV is what makes the tape advance). 
+
+### --> instruments read slightly higher as attenuation increases? is this is the opposite of what we would expect?
+
+```{r}
+ma200 %>%
+  select(time, instrument_id, variable, value) %>%
+  spread(variable, value) %>%
+  gather("variable", "value", contains("atn1")) %>% 
+  ggplot(aes(y=ma200_ir_bc1, x=value, col=variable)) + 
+  facet_grid(variable~instrument_id) +
+  geom_point(alpha=0.2) +
+  geom_vline(xintercept = 50, linetype=2, alpha=0.5) +
+  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
+  geom_smooth(se=F, col="black") + 
+  labs(
+    title = "BC readings vs filter attenuation",
+    y = "BC (ng/m3)",
+    x = "Attenuation (%)"
+  )
+
+
+```
+
+
 ## Gas Calibrations
 
 * The "level" column is what the instrument read, while the conc column is the true concentration during a calibration procedure. 
@@ -753,8 +915,9 @@ calibrations <- calibrations_table0 %>%
 
 ```
 
-```{r}
- 
+```{r, eval=F}
+#no need to show this - takes up a lot of space
+
 #gases
 for(i in seq_along(calib_instrument_ids)) {
   #i=6
@@ -802,15 +965,18 @@ for(i in seq_along(calib_instrument_ids)) {
 
 * We still see a very unstable reading for NO2_2 on 2019-04-15 ~ 13:00. There are no notes explaining this in the calibration notebook. It looks like the refernce concentration jump from 0 ppb to 80 ppb may have been too large for the NO2_2 instrument, particularly if it was not warmed up for long prior to doing so. Note, this was also the first in lab NO2 calibratiobn for our campaign, so we may have still been learning how to properly calibrate the instrument. The instrument starts to stabilize ~ 45 min into the 80 ppb session, but then falls again. Readings are more in line with other reference concentrations afterwards. **We will drop the 80 ppb reference concentration b/c the jump in concentration may have been too much for the instrument, particulalry if the instrument was not warmed up.** There's an argument to be made for also dropping the first 0 reading, but it shouldn't make a difference since the our calibration curves won't take that into account.
 
+* dropped the edges of some of the particle instruments since some readings looked unstable
+
 ```{r, echo=T}
 # add a lag - different for different instruments
 gas_start_lag <- 300 #5 min
 pt_start_lag <- 180 # 3 min
 end_lag <- 60 # 1 min
+## see spike in readings discminis near the end of each session - due to the filter being taken off?
+end_lag_disc <- end_lag + 60 # 2 min
 
 ```
 
-  
 ```{r, fig.height=10}
 
 calibrations <- calibrations_table0 %>%
@@ -819,7 +985,7 @@ calibrations <- calibrations_table0 %>%
     mutate(starttime =  if_else(instrument_id %in% calib_instrument_ids, 
                              starttime + gas_start_lag,
                              starttime + pt_start_lag),
-           endtime = endtime-end_lag
+           endtime = if_else(grepl("PMDISC_", instrument_id),  endtime-end_lag_disc, endtime-end_lag)
            ) %>%  
     #one time gets dropped. there is an error/instrument restart note.
     filter(starttime < endtime) %>%
@@ -842,13 +1008,7 @@ calibrations <- calibrations_table0 %>%
   filter(
     #drop these problematic/unstable No2_2 readings (see note above)
     !(instrument_id == "NO2_2" & runname == "2019-04-15_LABC" & conc == 80),
-    #neph filter was removed after this time
-    !(instrument_id == "PM25_176" & grepl("2019-10-02", runname) & time >= ymd_hms("2019-10-02 14:12:00", tz = mytz)),
-    
-     # these filter on/off times are wrong in the databaes, from looking at the calibration notebook notes
-    !(instrument_id == "PMPT_94" & time > "2019-10-02 14:04" & time < "2019-10-02 15:00" ),
-    !(instrument_id == "PMSCAN_5" & time > "2019-10-02 14:04" & time < "2019-10-02 14:10:10"),
-    
+     
     # intrument takes long time to stabilize here
     #drop these problematic/unstable No2_2 readings (see note above)
     !(instrument_id == "NO2_2" & runname == "2019-04-15_LABC" & conc == 80),
@@ -861,6 +1021,21 @@ calibrations <- calibrations_table0 %>%
     !(instrument_id == "NO2_1" & time > "2019-03-06 19:15:00" & time < "2019-03-06 19:24:00"),
     !(instrument_id == "NO2_1" & time > "2020-01-14 14:14:00" & time < "2020-01-14 14:20:00"),
 
+    #neph filter was removed after this time
+    !(instrument_id == "PM25_176" & grepl("2019-10-02", runname) & time >= ymd_hms("2019-10-02 14:12:00", tz = mytz)),
+    
+     # these filter on/off times are wrong in the databaes, from looking at the calibration notebook notes
+    !(instrument_id == "PMPT_94" & time > "2019-10-02 14:04" & time < "2019-10-02 15:00" ),
+    !(instrument_id == "PMSCAN_5" & time > "2019-10-02 14:04" & time < "2019-10-02 14:10:10"),
+   
+    # the filter on/off times seem at these times. will do some trimming
+        ### --> also remove large 13:09 spike??
+    !(instrument_id %in% c("PMPT_94", "PM25_176", "PMSCAN_5") & runname == "2020-01-13_LABC" & 
+      (time < "2020-01-13 13:08:00" | time > "2020-01-13 13:13:00")),
+      ## these few readigns look unstable and diff from previous readings - filter was not on long enough?
+    !(instrument_id =="PMDISC_3" & runname == "2020-01-13_LABC" &  time > "2020-01-13 13:05:00"),
+    !(instrument_id =="PMPTSCREEN_93" & runname == "2020-01-13_LABC" &  time > "2020-01-13 13:07:00"),
+    !(instrument_id =="PMPTSCREEN_93" & runname == "2019-11-21_LABC" &  time > "2019-11-21 11:16:00")
     ) %>%   
   drop_na(value)
 
@@ -1049,12 +1224,6 @@ calibration_curves %>%
 ```{r}
 # calibration function calibrates raw data ('value' variable) using the latest calibration curves for any given dataset (e.g., for each instrument_id if it is looped over)  
 
-
-# dt = dt0 %>% filter(instrument_id == "NO2_1") %>%
-#   mutate(value2 = value)
-# calibration_curves_df = calibration_curves %>% filter(instrument_id == "NO2_1")
-
-
 calib_fn <- function(dt, calibration_curves_df) {
   
   calibration_dys <- nrow(calibration_curves_df)
@@ -1107,7 +1276,7 @@ for (i in seq_along(calib_instruments2) ) {
   curves_temp <- calibration_curves %>%
     filter(instrument_id == calib_instruments2[i])
   
-  dt_temp <- dt0 %>%
+  dt_temp <- dt %>%
     filter(instrument_id == calib_instruments2[i]) %>%
     calib_fn(dt = ., calibration_curves_df = curves_temp)
   
@@ -1121,7 +1290,7 @@ for (i in seq_along(calib_instruments2) ) {
 ### Update data
 
 ```{r}
-dt <- dt0 %>%
+dt <- dt %>%
   rename(value_raw = value) %>%
   left_join(dt0_calibrated) %>%  
   #if no calibrations were done, use the uncalibrated values
@@ -1130,7 +1299,7 @@ dt <- dt0 %>%
 ```
 
 
-## Zero gas
+## Zero checks
 
 * **If instruments report readings near 0 and the noise is small (compared to a low background level?), we may not need to do anything to adjust particle readings** 
 
@@ -1144,13 +1313,14 @@ dt <- dt0 %>%
 
 observations      
 
-### --> see pt notes for: 2019-10-02 for PMPT_94, PMSCAN_5 
-### --> how do these look? drop more data? 
+* PMSCAN_5 tends to read high on some days
+
 
 ```{r}
 #particles
 for(i in seq_along(pt_instrument_ids)) {
-
+  
+  #i=12
     p <- calibrations %>%
       filter(instrument_id == pt_instrument_ids[i]) %>%
       gather(kind, value, conc, value) %>%
@@ -1175,6 +1345,8 @@ for(i in seq_along(pt_instrument_ids)) {
 
 ```
 
+**boxplots of 2-min medians from instrument readings during zero checks** These are comparable to 2-min stops.
+
 * we ideally want "low stop conc" values for each instrument to be much higher than that instrument's "median overall conc" during zeroing. We see that for most instruments except:    
   * neph values (PM25_176 are close)      
   * BC_0063 where a low stop value is actually below the median zero concentration value. This coud be because    
@@ -1194,8 +1366,6 @@ low_value <- readRDS(file.path("Data", "Output", "20210622 before adding new dat
  
 ```
 
-### --> If readings are not near 0 or the noise is large, ask Edmund Elena what we should do about specific instrument. adjust backwards? 
-
 * Tim's thoughts 
   * BC:    
     - makes low concentration readings less trustworthy since they are near the instrument's lower detection abilities (?)   
@@ -1206,25 +1376,35 @@ low_value <- readRDS(file.path("Data", "Output", "20210622 before adding new dat
     - the initial reading after a filter is placed on the inlet should be omitted from the data set and consider the data after a minute or so to ensure the sampling line has been cleaned of particles from the previous interval
     - The relatively small difference between the zero reading and your typical "low concentration" stop is what I find of most concern. This suggests that NS #3 would not be able to accurately characterize low concentrations since it is not that different from zero...Or these differences could be due to the fact that nanoscan 3 has a lot less data. 
     
-### --> repeat this for 2 min medians? 
+* BC_0066 is only based on one instance
 
 ```{r}
 
 calibrations %>%
   # look at particle instruments
-  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")))) %>% 
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")))) %>%  
+  #calculate 2-min medians 
+  mutate(time = floor_date(time, unit = "2 min")) %>%
+  group_by_at(vars(-value)) %>%
+  summarize(value = median(value)) %>%  #group_by(instrument_id) %>% summarize(n())
+  # stats for boxplots
   group_by(variable, instrument_id) %>%
-  alt_boxplot(var = "value") %>% #ungroup() %>%
-  left_join(low_value) %>%  
+  alt_boxplot(var = "value") %>%  
+  left_join(low_value) %>%
+  #add if primary instrument
+  mutate(Primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Primary_instrument = factor(Primary_instrument, levels = c("Primary", "Backup"))
+         ) %>%
   
-  ggplot(aes(x=instrument_id)) + 
+  ggplot(aes(x=instrument_id, linetype=Primary_instrument)) + 
   facet_wrap(~variable, scales="free") +
   geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
   geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
   
   # a low on-route value (for comparison)
   geom_point(aes(y = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
-  labs(title="instrument readings during 0 pt/cm3 concentration times (filter use)",
+  labs(title="2-min median instrument readings during zero checks",
+       y = "level",
        col=""
        )
 
@@ -1233,8 +1413,6 @@ calibrations %>%
 
 * don't see temporal trends to suggest shifting instrument readings over time?
 
-### --> repeat this for 2 min medians? 
-
 ```{r}
 
 calibrations %>%
@@ -1242,22 +1420,72 @@ calibrations %>%
   filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|"))),
          #Discmini 8 has 1 instance whre conc is missing but a diff filter was used
          #conc==0
-         ) %>% #View()
+         ) %>% 
+  #calculate 2-min medians 
+  mutate(time = floor_date(time, unit = "2 min")) %>%
+  group_by_at(vars(-value)) %>%
+  summarize(value = median(value)) %>%  
+  # stats for boxplots
   group_by(variable, instrument_id, runname) %>%
   alt_boxplot(var = "value") %>%
-  left_join(low_value) %>%  
+  left_join(low_value) %>% 
+  #add if primary instrument
+  mutate(Primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Primary_instrument = factor(Primary_instrument, levels = c("Primary", "Backup")),
+         date = substr(runname, 1,10) 
+         ) %>%
   
-  ggplot(aes(x=instrument_id, fill=runname)) + 
+  ggplot(aes(x=instrument_id, fill=date, linetype=Primary_instrument)) + 
+  facet_wrap(~variable, scales="free") +
+  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
+  geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
+  scale_fill_brewer(palette = "Purples") +
+  # a low on-route value (for comparison)
+  geom_point(aes(y = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
+  
+  labs(title="2-min median instrument readings during zero checks",
+       y = "level",
+       col=""
+       )
+
+```
+
+* by filter placement (on the manifold vs directly on the instrument inlet)   
+  - there is no clear discrepancy in instrument response related to the filter placement. Good. 
+
+```{r}
+
+calibrations %>%
+  # look at particle instruments
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")))) %>% 
+  mutate(filter_to = ifelse(grepl("manifold", notes), "manifold", "instrument"),
+         date = substr(runname, 1,10),
+         Primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Primary_instrument = factor(Primary_instrument, levels = c("Primary", "Backup")),
+         #calculate 2-min medians 
+         time = floor_date(time, unit = "2 min"),
+         ) %>%
+  group_by_at(vars(-value)) %>%
+  summarize(value = median(value)) %>%  
+  # stats for boxplots
+  group_by(variable, instrument_id, #date, 
+           filter_to, Primary_instrument) %>%
+  alt_boxplot(var = "value") %>%
+  left_join(low_value) %>% 
+  
+  ggplot(aes(x= instrument_id, fill=filter_to, linetype=Primary_instrument)) + 
   facet_wrap(~variable, scales="free") +
   geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
   geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
 
   scale_fill_brewer(palette = "Purples") +
-  labs(title="instrument readings during 0 pt/cm3 concentration times (filter use)",
+  labs(title="2-min median instrument readings during zero checks",
        col=""
        )
 
 ```
+
+
 
 * table shows that:  
   - most of the readings are genreally near 0   
@@ -1306,7 +1534,7 @@ calibrations %>%
 ```
 
 
-### --> ? may decide to adjust particle instruments backwards since these are not adjusted like the gas instruments are otherwise? 
+### --> If readings are not near 0 or the noise is large, ask Edmund Elena what we should do about specific instrument. adjust backwards since these are not adjusted like the gas instruments are otherwise? 
 
 ```{r}
 
@@ -1314,119 +1542,6 @@ calibrations %>%
 ```
 
 
-# Aethalometers
-
-## Filter attenuation 
-
-* checking the filter attenouation (uv_atn1 is what triggers the tape). If the attenuation is > 50%, the filter is less sensitive and could account for the zero readings. If this is true, we would want to drop these data. 
-
-* everything looks fine. Most of the UV wavelength readings are far from 50% attenuation.
-
-```{r}
-# table
-ma200 %>% 
-  filter(variable == "ma200_uv_atn1") %>% 
-  group_by(instrument_id) %>%
-  summarize(
-    N = n(),
-    Min = min(value),
-    Q25 = quantile(value, 0.25),
-    Median = median(value),
-    Q75 = quantile(value, 0.75),
-    Max = max(value)
-  ) %>%
-  kable(caption = "Aethalometer UV attenuation readings. N = number of 10-sec readings.") %>%
-  kable_styling()
-  
-```
-
-
-* there doesn't seem to be an association between low BC readings and attenuation (UV is what makes the tape advance). 
-
-### --> instruments read slightly higher as attenuation increases? is this is the opposite of what we would expect?
-
-```{r}
-ma200 %>%
-  select(time, instrument_id, variable, value) %>%
-  spread(variable, value) %>%
-  gather("variable", "value", contains("atn1")) %>% 
-  ggplot(aes(y=ma200_ir_bc1, x=value, col=variable)) + 
-  facet_grid(variable~instrument_id) +
-  geom_point(alpha=0.2) +
-  geom_vline(xintercept = 50, linetype=2, alpha=0.5) +
-  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
-  geom_smooth(se=F, col="black") + 
-  labs(
-    title = "BC readings vs filter attenuation",
-    y = "BC (ng/m3)",
-    x = "Attenuation (%)"
-  )
-
-
-```
-
-
-# Status codes
-
-## Aethalometers 
-
-* older sources that are slightly different 
-  * the [mm_trap_qaqc repository](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/format_db_flags.R)   
-  * see Amanda's draft of [QAQC.Rmd](https://github.com/kaufman-lab/mm_trap_qaqc/blob/master/QAQC.Rmd) documentation. This is also under trap\QAQC\qaqc_report_code\QAQC.Rmd. 
-
-### --> drop any readings? 
-
-```{r}
-# see documentation on server: trap\QAQC\qaqc_report_code\QAQC.Rmd
-
-#The way the error code works for the MA200 is based on using a base-2 number string, which includes a bunch of binary indicators (so something like 011010), which appears as base 10 in the database (something like 512).  Some of these numbers will represent combinations of multiple codes
-
-library(data.table)
-
-bc_errors <- dt %>% 
-  filter(grepl("ma200", variable)) %>% 
-  setDT() %>% 
-  ma200.status.all() %>%
-  as.tibble()
-
-detach(package:data.table)
-  
-bc_errors %>%
-  #calculate arrival time at any stop. also ensure that duplicate instruments are aligned correctly
-  group_by(runname, date, location, stop_id) %>%
-  #only keep first 3 min of data at each stop
-  filter(time- min(time) <= max_stop_duration) %>%
-  mutate(time = min(time)) %>%
-  #calculate proportion of time with errors for any given stop
-  group_by(runname, date, time, location, stop_id, instrument_id, variable, primary_instrument) %>%
-  summarize_at(ma200.flags, mean) %>%
-  ungroup() %>%
-  gather(error, value, ma200.flags) %>%  
-  group_by(error) %>%
-  summarize(
-    N = n(),
-    Min = min(value),
-    Q25 = quantile(value, 0.25),
-    Median = median(value),
-    Q75 = quantile(value, 0.25),
-    Max = max(value),
-    
-    n_with_error = sum(value >0),
-    prop_with_error = n_with_error/N
-  ) %>%
-  kable(caption="Distribution of the proportion of time during any given stop with MA200 error messages. N = number of stops.", digits = 2) %>%
-  kable_styling()
-  
-  
-```
-
-## NO2
-
-### --> drop NO2_2 zero readings. 
-
-```{r}
-
-```
 
 
 
@@ -1490,7 +1605,9 @@ dt %>%
     # N_above3min = sum(stop_duration>3),
     # Prop_above3min = N_above3min/N,
     Min = min(stop_duration),
+    Q05 = quantile(stop_duration, 0.05),
     Median = median(stop_duration),
+    Q95 = quantile(stop_duration, 0.95),
     Max = max(stop_duration)
   ) %>%
   kable(caption = "Stop duration when using first 3 minutes. N = number of stops.", digits = 2) %>%
@@ -1499,8 +1616,6 @@ dt %>%
 ```
 
 
-
- 
 ```{r}
 #note: on rare instantces when duplicate instruments were on board, all the data are used to calculate a median
 
@@ -1520,55 +1635,12 @@ dt_stops <- dt %>%
 
 ```
 
-```{r}
-n <- dt_stops %>% filter(instrument_id == "NO2_1",
-                     #BH and 10W
-                     location %in% c("MC0003", "MC0120")
-                     ) %>%
-  nrow()
-
-n
-
-n/30
-
-```
-
-# Summary of stop-level data 
-
-* what is a low-level concentration? 
-
-```{r}
  
-stop_tb <- dt_stops %>%
-  group_by(variable, instrument_id) %>%
-  summarize(
-    N = n(),
-    Min = min(value),
-    Q05 = quantile(value, 0.05),
-    Q10 = quantile(value, 0.10),
-    Median = median(value),
-    Q90 = quantile(value, 0.90),
-    Q95 = quantile(value, 0.95),
-    Max = max(value)
-  ) %>%
-  ungroup()
+summary of stop-level data 
 
-# stop_tb %>%
-#   mutate_if(is.numeric, ~format(., scientific = T, digits = 2)) %>%
-#   kable(caption = "Distribution of stop medians. N = number of stops: 309 locations x visits/location.", 
-#         #digits = 2, 
-#         ) %>%
-#   kable_styling()
-  
-#use in zero plots later
-saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rda"))
-
-```
-
+```{r, fig.height=12, eval=F}
+#* labels are for the min/max reading of each instrument 
  
-* labels are for the min/max reading of each instrument 
-
-```{r, fig.height=12}
  
 p <- list()
 
@@ -1923,7 +1995,6 @@ dt_stops3_colo_wide <- dt_stops3_colo %>%
 * CO 1 (primary instrument) does not correlate well with either of the backup instruments. There is a lot of noise with CO 3, while CO 190134 seems to report very high readings    
   * CO 190134 seems to have values much higher than expected when compared to CO1 and CO3
 
-### --> these look bad. there's a lot more data now
 
 ```{r, fig.height=21}
 
@@ -2942,7 +3013,9 @@ neph_colos %>%
 
 ```
 
+## Overnight Collocations
 
+- compare collocated instruments
 
 
 # Update data
@@ -2970,6 +3043,32 @@ original_data <- dt_stops
 final_data <- dt_stops6
 
 ```
+
+
+```{r}
+#* what is a low-level concentration? for zero comparison plots above
+  
+stop_tb <- final_data %>%
+  group_by(variable, instrument_id) %>%
+  summarize(
+    N = n(),
+    Min = min(value),
+    Q05 = quantile(value, 0.05),
+    Q10 = quantile(value, 0.10),
+    Median = median(value),
+    Q90 = quantile(value, 0.90),
+    Q95 = quantile(value, 0.95),
+    Max = max(value)
+  ) %>%
+  ungroup()
+  
+#use in zero plots later
+saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rda"))
+
+```
+
+
+
 
 * the proportion of data dropped 
 

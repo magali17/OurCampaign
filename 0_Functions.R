@@ -156,6 +156,7 @@ alt_boxplot <- function(df, var, min_q=0.025, max_q=0.975){
     
     #calculate quantiles
     summarize(
+      N = n(),
       Qmin = quantile(var, min_q),
       Q25 = quantile(var, 0.25),
       Q50 = quantile(var, 0.50),
