@@ -15,9 +15,13 @@ editor_options:
   chunk_output_type: console
 ---
 
+```{r}
+#test
+```
+
 ```{r, eval=F, echo=F}
 #update credentials to use token instead of old passowrd
-gitcreds::gitcreds_set() # select '2' and enter new token
+gitcreds::gitcreds_set() # select '2' and enter new token    
 
 ```
 
