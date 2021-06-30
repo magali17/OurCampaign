@@ -48,10 +48,22 @@ pacman::p_load(knitr, kableExtra,
 
 set.seed(1)
 
+image_path <- file.path("..", "Manuscript", "Images")
+theme_set(theme(legend.position = "bottom"))
+
 ```
 
 
 # Upload data
+
+common variables
+
+```{r}
+low_boxplot_q <- 0.05
+high_boxplot_q <- 0.95
+
+```
+
 
 ###--> add uncalibrated data/other data for sensitivity analyses 
 
@@ -60,8 +72,7 @@ set.seed(1)
 source("0_Functions.R")
 
 #only need location table
-load(file.path("Data", "Original", "imports_fieldnotes_location_tables.rda"))
-rm(imports, fieldnotes)
+load(file.path("Data", "Original", "locations_table.rda"))
 
 #definitions: ap 
 load(file.path("Data", "Output", "common_vars.rda"))
@@ -84,42 +95,53 @@ monitoring_area_shp <- read_sf(file.path("..", "GIS", "Shapefiles", "Monitoring"
 
 ```
 
-* calcualted PM2.5 from neph calibration curve. did this for the neph data as well.
 
 ```{r}
-sec <- sec0 %>%
-  mutate(
-    
-    #use doe neph (bscat x10^4 values) and pm2.5 calibration curve to calc pm2.5 from our neph readings
-    value = ifelse(grepl("neph", variable), value*10^4*slope + int, value),
-    variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
-    
-    pollutant = variable,
-  ) %>%
-  variable_relabel(var = "pollutant") 
+# sec <- sec0 %>%
+#   mutate(
+#     
+#     #use doe neph (bscat x10^4 values) and pm2.5 calibration curve to calc pm2.5 from our neph readings
+#     value = ifelse(grepl("neph", variable), value*10^4*slope + int, value),
+#     variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
+#     
+#     pollutant = variable,
+#   ) %>%
+#   variable_relabel(var = "pollutant") 
  
 stop_no <- stops0 %>%
   distinct(location) %>% 
   mutate(location_no = row_number()) 
 
 stops <- stops0 %>%
+  #select(-c(primary_instrument, ))
   mutate(
-    #use doe neph (bscat x10^4 values) and pm2.5 calibration curve to calc pm2.5 from our neph readings
-    value = ifelse(grepl("neph", variable), value*10^4*slope + int, value),
     variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
-    
     day = wday(time,label = T, week_start = 1),
     hour = hour(time),
     pollutant = variable,
   ) %>%
   variable_relabel(var = "pollutant") %>%
   add_season(.date_var = "date") %>%
-  
   left_join(stop_no)
 
   
 ```
 
+### --> calc 20-50 nm UFP 
+
+```{r}
+test <- stops %>%
+  filter(grepl("PMPT", instrument_id)) %>%
+  select(time, stop_id, variable, value) %>%
+  spread(variable, value) %>%
+  drop_na() %>%
+  mutate(
+    pnc_20_50_nm = pnc_noscreen - pnc_screen
+  ) %>%
+  gather("variable", "value", pnc_20_50_nm)
+
+
+```
 
 
 # Drive Days
@@ -127,29 +149,24 @@ stops <- stops0 %>%
 ```{r}
 #total 
 stops %>%
-  distinct(runname) %>%
+  distinct(runname) %>%  
   summarize(total_drive_days = n()) %>%
   kable(caption = "total drive days") %>%
   kable_styling()
 
-#by instrument 
+## by instrument
 stops %>%
-  distinct(runname, pollutant, ufp_range_nm) %>%
   group_by(pollutant, ufp_range_nm) %>%
-  summarize(
-    total_drive_days = n()
-  ) %>%
-  kable(caption = "total drive days by instrument") %>%
-  kable_styling() 
-
+  distinct(runname) %>%  
+  summarize(total_drive_days = n()) %>%
+  kable(caption = "total drive days, by instrument") %>%
+  kable_styling()
 
 ```
 
 ```{r}
 stops %>%
-  mutate(
-    hour = ifelse(hour==0, 24, hour)
-  ) %>% 
+  mutate(hour = ifelse(hour==0, 24, hour)) %>% 
   summarize(
     Earliest_sampling_hour = min(hour),
     Latest_sampling_hour = max(hour)
@@ -179,6 +196,7 @@ stops %>%
     N = n(),
     Min = min(N_visits),
     Q25 = quantile(N_visits, 0.25),
+    Mean = round(mean(N_visits), 1),
     Median = quantile(N_visits, 0.50),
     Q75 = quantile(N_visits, 0.95),
     Max = max(N_visits),
@@ -234,6 +252,109 @@ stops %>%
 
 ```
 
+
+## Spatial trends
+
+* example using 10 sites per high, medium and low variability site, based on that site's stop concentration SD (based on tertile quantile break points: 0.33, 0.66)
+
+within site variability 
+
+* note that a few (7) BC measuresments are dropped if on log10 x axis scale b/c these are 0 ng/m3.
+
+```{r, fig.height=10}
+
+print("Distribution of median stop concentrations per site. Each colored line is a site with approximately 29 concentrations.")
+
+stops %>%
+  ggplot(aes(x=value, col=location)) + 
+  facet_wrap(~pollutant+ufp_range_nm, scales="free") + 
+  #use this instead of geom_density b/c can change line transparancy
+  geom_line(stat="density", alpha=0.2) +
+  scale_x_log10() +
+  guides(col = F) 
+
+```
+
+* boxplots of site visit medians.    
+* whiskers are for the quantiles: `r low_boxplot_q` and `r high_boxplot_q`
+
+#### --> START HERE 
+
+```{r}
+unique_pollutants <- unique(stops$pollutant)
+
+#p <- list()
+
+for (i in seq_along(unique_pollutants)) {
+  #i=4
+    p <- stops %>%
+      filter(pollutant == unique_pollutants[i]) %>%
+       #calc stats for alternative boxplots
+      group_by(pollutant, ufp_range_nm, location, location_no) %>%
+      alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>%  
+    
+      ggplot(aes(y=factor(location_no), col=ufp_range_nm)) +
+      geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
+       facet_wrap(~pollutant+ufp_range_nm, #scales="free", 
+                  nrow = 1) +
+        labs(y= "Site No.",
+             x= "Value",
+             col = "Particle Range (nm)"
+             )  +
+      scale_y_discrete(breaks = seq(10,310, 10)) #+ scale_x_log10()
+    
+    if(!grepl("UFP", unique_pollutants[i])) {
+      p <- p + theme(legend.position = "none") + scale_x_log10()
+        # # for ref if on diff x axes  
+        # geom_vline(xintercept = 25e3, linetype=3, alpha=0.5)
+      }  
+    
+    print(p)
+    
+    ggsave(p, file = file.path(image_path, "SI", paste0("visit_boxplots_", sub(" .*", "", unique_pollutants[i]), ".png")),
+         height = 11, width = 8
+         )
+}
+
+
+```
+
+
+```{r, fig.height=18, eval=F}
+#hard to see any patterns b/c site are not organized.
+#sample a few sites w/ low, medium and high variability
+loc_sample <- stops %>%
+  group_by(location) %>%
+  mutate(sd = sd(value)) %>%
+  ungroup() %>%
+  mutate(
+    sd_lvl = ifelse(sd >= quantile(sd, 0.66), "high",
+                      ifelse(sd < quantile(sd, 0.66) & sd >= quantile(sd, 0.33), "medium",
+                                                               "low")
+                      )
+    ) %>% 
+  #one row per site
+  distinct(location, sd_lvl) %>%
+  #take random sample from each SD level
+  group_by(sd_lvl) %>%
+  sample_n(10)  
+    
+ stops %>%
+   #only keep sample of sites
+   right_join(loc_sample) %>%  
+   #calc stats for alternative boxplots
+  group_by(pollutant, ufp_range_nm, location) %>%
+  alt_boxplot(var = "value") %>%  
+
+  ggplot(aes(y=factor(location), col=ufp_range_nm)) +
+  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
+   facet_wrap(~pollutant, scales="free") +
+    labs(y= "Site",
+         x= "Value"
+         )  
+
+
+```
 
 ## Temporal Trends 
 
@@ -330,66 +451,6 @@ stops %>%
 ```
 
  
-## Spatial trends
-
-* example using 10 sites per high, medium and low variability site, based on that site's stop concentration SD (based on tertile quantile break points: 0.33, 0.66)
-
-within site variability 
-
-* note that a few (7) BC measuresments are dropped if on log10 x axis scale b/c these are 0 ng/m3.
-
-```{r, fig.height=10}
-
-print("Distribution of median stop concentrations per site. Each colored line is a site with approximately 29 concentrations.")
-
-stops %>%
-  ggplot(aes(x=value, col=location)) + 
-  facet_wrap(~pollutant+ufp_range_nm, scales="free") + 
-  #use this instead of geom_density b/c can change line transparancy
-  geom_line(stat="density", alpha=0.2) +
-  scale_x_log10() +
-  guides(col = F) 
-
-```
-
-
-```{r, fig.height=18, eval=F}
-#hard to see any patterns b/c site are not organized.
-#sample a few sites w/ low, medium and high variability
-loc_sample <- stops %>%
-  group_by(location) %>%
-  mutate(sd = sd(value)) %>%
-  ungroup() %>%
-  mutate(
-    sd_lvl = ifelse(sd >= quantile(sd, 0.66), "high",
-                      ifelse(sd < quantile(sd, 0.66) & sd >= quantile(sd, 0.33), "medium",
-                                                               "low")
-                      )
-    ) %>% 
-  #one row per site
-  distinct(location, sd_lvl) %>%
-  #take random sample from each SD level
-  group_by(sd_lvl) %>%
-  sample_n(10)  
-    
- stops %>%
-   #only keep sample of sites
-   right_join(loc_sample) %>%  
-   
-  #calc stats for alternative boxplots
-  group_by(pollutant, ufp_range_nm, location) %>%
-  alt_boxplot(var = "value") %>%  
-  
-  ggplot(aes(y=factor(location), col=ufp_range_nm)) +
-  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
-   facet_wrap(~pollutant, scales="free") +
-    
-    labs(y= "Site",
-         x= "Value"
-         )  
-
-
-```
 
  
 # Raw data
@@ -399,13 +460,13 @@ loc_sample <- stops %>%
 * note that ~ 24k rows of data are removed for plots on log10 x axes b/c values <=0 
 
 ```{r,  fig.height=10}
-sec %>%
-  ggplot(aes(x=value, col=location)) + 
-  facet_wrap(~pollutant+ufp_range_nm, scales="free") + 
-  #use this instead of geom_density b/c can change line transparancy
-  geom_line(stat="density", alpha=0.2) +
-  scale_x_log10() +
-  guides(col = F) 
+# sec %>%
+#   ggplot(aes(x=value, col=location)) + 
+#   facet_wrap(~pollutant+ufp_range_nm, scales="free") + 
+#   #use this instead of geom_density b/c can change line transparancy
+#   geom_line(stat="density", alpha=0.2) +
+#   scale_x_log10() +
+#   guides(col = F) 
 
 ```
 
@@ -413,57 +474,58 @@ sec %>%
 boxplots with whiskers at 5 and 95
 
 ```{r, fig.height=10, eval=F}
-print("Distribution of raw second readings for a set of example sites (same as above)")
-
-sec %>%
-  variable_relabel(var = "variable") %>%
-  
- #only keep sample of sites
- right_join(loc_sample) %>% 
-  
-  #calc stats for alternative boxplots
-  group_by(variable, location) %>%
-  alt_boxplot(var = "value") %>%   
-  
-  ggplot(aes(y=location)) +
-  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
-  facet_wrap(~variable, scales="free") +
-  
-  labs(y="Location",
-       x="Value"
-       )
+# print("Distribution of raw second readings for a set of example sites (same as above)")
+# 
+# sec %>%
+#   variable_relabel(var = "variable") %>%
+#   
+#  #only keep sample of sites
+#  right_join(loc_sample) %>% 
+#   
+#   #calc stats for alternative boxplots
+#   group_by(variable, location) %>%
+#   alt_boxplot(var = "value") %>%   
+#   
+#   ggplot(aes(y=location)) +
+#   geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
+#   facet_wrap(~variable, scales="free") +
+#   
+#   labs(y="Location",
+#        x="Value"
+#        )
  
 
 
 ```
 
-### --> ? what to do with this? 
 
 ```{r}
-#IQR table 
-
-sec %>%
-  #calc stats for alternative boxplots
-  group_by(pollutant, ufp_range_nm, location) %>%
-  summarize(
-    IQR = IQR(value)
-  ) %>%  #View()
-  summarize(
-    Min = min(IQR),
-    Median = median(IQR),
-    Max = max(IQR)
-  ) %>%
-  mutate_if(is.numeric, 
-            #if values have decimal values, only show 3 sigfigs, though not necessarily in scientific notation
-            ~format(., digits = 3, #scientific = T,
-                    ) 
-            #~ signif(., 3) #~ as.character( signif(., 3) )
-            ) %>%
-  kable(caption = "Distribution of IQR values for the second data", 
-        
-        #digits=2
-        ) %>%
-  kable_styling()
+# ## --> ? what to do with this? 
+# 
+# #IQR table 
+# 
+# sec %>%
+#   #calc stats for alternative boxplots
+#   group_by(pollutant, ufp_range_nm, location) %>%
+#   summarize(
+#     IQR = IQR(value)
+#   ) %>%  #View()
+#   summarize(
+#     Min = min(IQR),
+#     Median = median(IQR),
+#     Max = max(IQR)
+#   ) %>%
+#   mutate_if(is.numeric, 
+#             #if values have decimal values, only show 3 sigfigs, though not necessarily in scientific notation
+#             ~format(., digits = 3, #scientific = T,
+#                     ) 
+  #           #~ signif(., 3) #~ as.character( signif(., 3) )
+  #           ) %>%
+  # kable(caption = "Distribution of IQR values for the second data", 
+  #       
+  #       #digits=2
+  #       ) %>%
+  # kable_styling()
   
   
 ```

@@ -2,6 +2,7 @@
 
 ######################################################################################################################
 # fn returns colocation plot w/ best fit info, RMSE and MSE-based R2
+## blue line is linear fit
 
 colo.plot <- function(data.wide=mm.wide, 
                       x.variable, x.label = "",
@@ -83,9 +84,9 @@ colo.plot <- function(data.wide=mm.wide,
                                       shape = data.wide[[shape.var]]
     )) + 
     coord_fixed() +
-    geom_abline(intercept = 0, slope = 1) +
+    geom_abline(intercept = 0, slope = 1, linetype=2, alpha=0.5) +
     #geom_smooth(aes(fill="loess")) +
-    geom_smooth(method = "lm", aes(fill="LS")) +
+    geom_smooth(method = "lm", se = F) +
     xlim(min_plot, max_plot) +
     ylim(min_plot, max_plot) +
     labs(title = #wrapper(
@@ -283,9 +284,30 @@ facet_grid_equal <- function(...) {
 
 # fn relabels variable (pollutants) to include units and a clearer name for presentation purposes
 
-variable_relabel <- function(dt, var = "variable") {
+variable_relabel <- function(dt, var = "variable"#, add_instrument=F
+                             ) {
+  
+  dt <- dt %>% 
+    rename(var=var) 
+  
+  # if(add_instrument ==TRUE){
+  #   dt <- dt %>%
+  #     mutate(
+  #       instrument = recode_factor(factor(var),
+  #                                  "co_ppm" = "CO (ppm)",
+  #                                  "co2_umol_mol" = "CO2 (ppm)",
+  #                                  "ma200_ir_bc1" = "BC (ng/m3)",
+  #                                  "neph_bscat" = "Neph (bscat/m)",
+  #                                  "pm2.5_ug_m3" = "PM2.5 (ug/m3)",
+  #                                  "no2" = "NO2 (ppb)",
+  #                                  "ns_total_conc" = "UFP (pt/cm3)", #, 10-420 nm (pt/cm3)", #"UFP_NanoScan (pt/cm3)",
+  #                                  "pmdisc_number" = "UFP (pt/cm3)", #, 10-700 nm (pt/cm3)", #"UFP_DiSCmini (pt/cm3)",
+  #                                  "pnc_noscreen" = "UFP (pt/cm3)", #, 20-1,000 nm (pt/cm3)", #"UFP_PTRAK (pt/cm3)",
+  #                                  "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm (pt/cm3)" #"UFP_PTRAK_screened (pt/cm3)"
+  #       )
+  #     )
+  
   dt <- dt %>%
-    rename(var=var) %>%
     mutate(
       ufp_range_nm = ifelse(var=="ns_total_conc", "10-420",
                          ifelse(var=="pmdisc_number", "10-700",
@@ -314,20 +336,15 @@ variable_relabel <- function(dt, var = "variable") {
                                    
                                    "CO (ppm)"
                                    )
-                   
-                   ),
-      
-      # #drop everything after a space or comma
-      # pollutant = gsub(" .*|,.*", "", var),
-      # pollutant = factor(pollutant, levels = c("")
-      #                      )
+                   )
     )
+  
   
   names(dt)[names(dt) == "var"] <- var
   
   return(dt)
   
-}
+} 
 
 ######################################################################################################################
 

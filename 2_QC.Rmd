@@ -35,6 +35,12 @@ gitcreds::gitcreds_set() # select '2' and enter new token
   * mobile monitoring data for all pollutants (9): CO, CO2, BC, Nephelometers, NO2, UFPs (4 measures)       
   * DOE minute (non-validated) and hourly (validated) data for various pollutants: BC, NO2, Neph, PM2.5, CO
   
+* added 10-second lag to all instruments to account for the time required for a volume of air to travel from the sampling inlet to each instrument 
+
+* dropped readings with error codes suggesting inaccurate field measurements   
+  * MA200 (BC): pump flow and optical saturation errors     
+  * NO2: readings during automatic baseline checks     
+
 * gas calibrations   
   * instruments readings were adjusted after a gas calibration until the next calibration was done (i.e., calibrations were for specific time periods)   
   * all calibrations used the reference concentration as the independent variable, and "calibrated" measurements were estimated after solving for this covariate      
@@ -63,7 +69,7 @@ gitcreds::gitcreds_set() # select '2' and enter new token
   * screened P-TRAKS readings < 100 pt/cm3
   
 * inspected time series data during times when extreme instrument concentrations (min & max conc) were observed. Readings were compared against other instrument readings (i.e., were other instruments also reporting elevated levels?)   
-  * __[delete note here since this instrument is fully dropped later?]__ dropped one instance of CO2_19 (backup instrument) readings when readings were dissimilar from other instruments   
+  * dropped one instance of CO2_19 (backup instrument) readings when readings were dissimilar from other instruments. Note, this instrument is fullu dropped later.
 
 * compared & calibrated collocated duplicate instruments 
   * since the two screened P-TRAKS that collected most of the data were not collocated, we plotted density curves to show that their distribtuions were similar 
@@ -80,16 +86,16 @@ gitcreds::gitcreds_set() # select '2' and enter new token
     * if there was no primary instrument, however, readings were calibrated to the average of both instruments based on their collocations    
       * discminis   
     * calibrate backup instruments when they deviate from the primary instrument using recent collocation data
-      * calibrate NanoScan (ns) 3 to ns 5 using data collected before __2019-04-01__ since 3 tends to read low and ns 3 values after this were not used anyways    
-      * calibrate NO2_1 to NO2_2 using data collected before __2019-07-01__.     
-        * Note that some NO2_1 values become negative    
+      * calibrate NanoScan (ns) 3 to ns 5 using data collected before __2019-04-01__ since 3 tended to read low and ns 3 values after this were not used to estimate site annual averages anyways    
+      * calibrate NO2_1 to NO2_2 using data collected before __2019-04-01__.     
+        * Note that some NO2_1 values become negative, but 2-minute AQS collocations were more accurate    
     
 * calibrated neph readings to estimate PM2.5 using Copper's calibration curve
 
-* checked that there were no instrument trends occurring over the course of a samplign day (e.g., increasing instrument readings imply as a funciton of time)   
+* checked that there were no instrument trends occurring over the course of a samplign day (e.g., increasing instrument readings as a funciton of time)   
 
 * AQS data comparisons   
-  * checked that Copper's calibration curve was similar to the one fit using DOE data for 2016. Estimates would thus be similar regardless of what curve was used.
+  * checked that Copper's calibration curve was similar to the one fit using DOE data for the study period. Estimates would thus be similar regardless of what curve was used.
   
   * see AQS section for details on the discrepancies between these two curves 
   
@@ -179,6 +185,10 @@ pacman::p_load(knitr, kableExtra,
 
 set.seed(1)
 
+theme_set(theme(legend.position = "bottom"))
+
+image_path <- file.path("..", "Manuscript", "Images")
+
 ```
 
 
@@ -186,6 +196,7 @@ set.seed(1)
 common variables & functions
 
 ```{r}
+
 #functions
 source("0_Functions.R")
 source("format_db_flags.R")
@@ -225,9 +236,9 @@ unique_routes <- paste0("R0", c(1:9))
 drop_instruments <-  c(paste0("PMPT_", c(1,2,3, 4)),
                                paste0("PMPTSCREEN_", c(1,4)),
                        "PMSCAN_2",
-                       "PMDISC_7" #, "BC_0263"
-                       
-)
+                       "PMDISC_7"#, "BC_0263"
+                       )
+# note: BC_0263 is different from BC_0063. BC_0263 was used at AQS sites overnight.
 
 gas_calibrated <- c("co_ppm", "co2_umol_mol", "neph_bscat", "no2")
 
@@ -275,10 +286,7 @@ calibration_data_2min <- calibration_data %>%
 #all stop data
 dt0 <- readRDS(file.path("Data", "Original", "stop_data.rda")) %>%
   rename(time = timeint) %>%
-  mutate(date = ymd(substr(time, 1, 10)),
-         # this must have the wrong label - see original data
-         instrument_id = ifelse(instrument_id == "BC_0263", "BC_0063", instrument_id)
-         ) %>%
+  mutate(date = ymd(substr(time, 1, 10))) %>%
   filter(
     #drop instruments w/ few readings (only want a primary and backup instrument)
     !instrument_id %in% drop_instruments,
@@ -647,18 +655,21 @@ dt0 %>%
 ```{r}
 #tables
 dt0 %>%
-  distinct(date, variable, #instrument_id
-           ) %>%
-  group_by(variable, #instrument_id
-           ) %>%
+  group_by(variable) %>%
+  distinct(runname) %>%
+  
+  # distinct(date, variable, #instrument_id
+  #          ) %>%
+  # group_by(variable, #instrument_id
+  #          ) %>%
   summarize(
       sampling_days = n(),
-      start_date = min(date),
-      end_date = max(date)
+      start_date = min(runname),
+      end_date = max(runname)
     ) %>%
   ungroup() %>%
   add_row(variable="OVERALL MEAN", sampling_days=mean(.$sampling_days)) %>%
-  kable(caption = "Total instrument sampling", 
+  kable(caption = "Initial drive days (before data cleaning)", 
         digits = 0
         ) %>%
   kable_styling()
@@ -1208,6 +1219,7 @@ calibration_curves <- rbind(no2_2_calib_curves, no2_1_and_co_calib_curves) %>%
 calibration_curves %>%
   gather("term", "estimate", intercept, conc) %>%
   group_by(variable, instrument_id, term) %>%
+  variable_relabel() %>%
   summarize(
     N = n(),
     Min = min(estimate),
@@ -1215,7 +1227,11 @@ calibration_curves %>%
     Max = max(estimate)
   ) %>%
   #arrange(term, instrument_id) %>%
-  kable(caption = "Distribution of calibration curve coefficient estimates for conc_instrument ~ conc_reference*B1 + B0. N = number of calibration days. 'conc' term is the slope. A no intercept model was fit to instrument NO2_2, which reset after each zero reading.", digits = 2) %>%
+  kable(caption = "Distribution of calibration curve coefficient estimates for conc_instrument ~ conc_reference*B1 + B0. N = number of calibration days. 'conc' term is the slope. A no intercept model was fit to instrument NO2_2, which reset after each zero reading.", 
+        digits = 2, 
+        col.names = c("Pollutant", "Instrument ID", "Term", "N", "Min", "Median", "Max")
+        
+        ) %>%
   kable_styling()
   
 ```
@@ -1378,7 +1394,10 @@ low_value <- readRDS(file.path("Data", "Output", "20210622 before adding new dat
     
 * BC_0066 is only based on one instance
 
+
 ```{r}
+
+print("2-min median instrument readings during zero checks")
 
 calibrations %>%
   # look at particle instruments
@@ -1392,21 +1411,24 @@ calibrations %>%
   alt_boxplot(var = "value") %>%  
   left_join(low_value) %>%
   #add if primary instrument
-  mutate(Primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
-         Primary_instrument = factor(Primary_instrument, levels = c("Primary", "Backup"))
+  mutate(Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Instrument = factor(Instrument, levels = c("Primary", "Backup"))
          ) %>%
+  variable_relabel() %>%
   
-  ggplot(aes(x=instrument_id, linetype=Primary_instrument)) + 
-  facet_wrap(~variable, scales="free") +
-  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
-  geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
+  ggplot(aes(y=instrument_id, linetype=Instrument)) + 
+  facet_wrap(~variable +ufp_range_nm, scales="free") +
+  geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
+  geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
   
   # a low on-route value (for comparison)
-  geom_point(aes(y = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
-  labs(title="2-min median instrument readings during zero checks",
-       y = "level",
+  geom_point(aes(x = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
+  labs(x = "Value",
+       y = "Instrument ID",
        col=""
        )
+
+ggsave(filename = file.path(image_path, "SI", "zero.png"), width = 10)
 
 ```
 
@@ -1414,6 +1436,7 @@ calibrations %>%
 * don't see temporal trends to suggest shifting instrument readings over time?
 
 ```{r}
+print("2-min median instrument readings during zero checks")
 
 calibrations %>%
   # look at particle instruments
@@ -1430,21 +1453,21 @@ calibrations %>%
   alt_boxplot(var = "value") %>%
   left_join(low_value) %>% 
   #add if primary instrument
-  mutate(Primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
-         Primary_instrument = factor(Primary_instrument, levels = c("Primary", "Backup")),
+  mutate(Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Instrument = factor(Instrument, levels = c("Primary", "Backup")),
          date = substr(runname, 1,10) 
          ) %>%
   
-  ggplot(aes(x=instrument_id, fill=date, linetype=Primary_instrument)) + 
+  ggplot(aes(y=instrument_id, fill=date, linetype=Instrument)) + 
   facet_wrap(~variable, scales="free") +
-  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
-  geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
+  geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
+  geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
   scale_fill_brewer(palette = "Purples") +
   # a low on-route value (for comparison)
-  geom_point(aes(y = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
+  geom_point(aes(x = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
   
-  labs(title="2-min median instrument readings during zero checks",
-       y = "level",
+  labs(x = "value",
+       y = "Instrument ID",
        col=""
        )
 
@@ -1454,14 +1477,15 @@ calibrations %>%
   - there is no clear discrepancy in instrument response related to the filter placement. Good. 
 
 ```{r}
+print("2-min median instrument readings during zero checks")
 
 calibrations %>%
   # look at particle instruments
   filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")))) %>% 
   mutate(filter_to = ifelse(grepl("manifold", notes), "manifold", "instrument"),
          date = substr(runname, 1,10),
-         Primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
-         Primary_instrument = factor(Primary_instrument, levels = c("Primary", "Backup")),
+         Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Instrument = factor(Instrument, levels = c("Primary", "Backup")),
          #calculate 2-min medians 
          time = floor_date(time, unit = "2 min"),
          ) %>%
@@ -1469,19 +1493,17 @@ calibrations %>%
   summarize(value = median(value)) %>%  
   # stats for boxplots
   group_by(variable, instrument_id, #date, 
-           filter_to, Primary_instrument) %>%
+           filter_to, Instrument) %>%
   alt_boxplot(var = "value") %>%
   left_join(low_value) %>% 
   
-  ggplot(aes(x= instrument_id, fill=filter_to, linetype=Primary_instrument)) + 
+  ggplot(aes(y= instrument_id, fill=filter_to, linetype=Instrument)) + 
   facet_wrap(~variable, scales="free") +
-  geom_hline(yintercept = 0, linetype=2, alpha=0.5) +
-  geom_boxplot(stat = "identity", aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax)) +
+  geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
+  geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
 
   scale_fill_brewer(palette = "Purples") +
-  labs(title="2-min median instrument readings during zero checks",
-       col=""
-       )
+  labs(col="", y = "Instrument ID")
 
 ```
 
@@ -1547,7 +1569,45 @@ calibrations %>%
 
 # Summary of all raw data 
  
- 
+second-level: comparison of original and final second-level data used to calculate stop medians
+
+
+```{r}
+s0 <- dt0 %>%
+  filter(variable != "co_ppm") %>%
+  group_by(variable) %>%
+  summarize(
+    original_samples = n()
+  )
+s1 <- dt %>%
+  filter(variable != "co_ppm") %>%
+  group_by(variable) %>%
+  summarize(
+    final_samples = n()
+  )
+
+full_join(s0, s1) %>%
+  variable_relabel() %>%
+  mutate(variable = ifelse(grepl("UFP", variable), paste0(variable, ", ", ufp_range_nm, "nm"), as.character(variable) )) %>%
+  select(-ufp_range_nm) %>%
+  rbind(c("TOTAL", sum(.$original_samples), sum(.$final_samples))) %>%
+  mutate_at(vars(-variable), ~as.numeric(.)) %>%
+  mutate(
+    samples_dropped = original_samples - final_samples,
+    percent_samples_dropped = samples_dropped/original_samples*100
+  ) %>%
+  
+  kable(caption = "Mobile monitoring samples", 
+        digits = 2, 
+        col.names = c("Pollutant", "Original Samples", "Final Samples", "Samples Dropped", "Percent Samples Dropped"), 
+        format.args = list(big.mark=', ')
+        ) %>%
+  kable_styling()
+
+```
+
+
+
 
 ```{r}
 print("total raw, second-level obsevations")
@@ -1965,7 +2025,7 @@ common_names <- c("runname", "date", "time", "instrument_id", "value")
 dt_stops3_colo <- dt_stops3 %>%
   #these are never collocated
   filter(!instrument_id %in% c("PMPTSCREEN_2", "PMPTSCREEN_93")) %>% 
-  select(common_names) #%>% rbind(calibration_data_2min[common_names])   
+  select(common_names)  
 
 dt_stops3_colo_wide <- dt_stops3_colo %>%  
   spread(instrument_id, value) %>%
@@ -1974,16 +2034,7 @@ dt_stops3_colo_wide <- dt_stops3_colo %>%
   )
 
  
-# dt_stops3_colo %>% slice(21455, 21456, 21457, 21458, 21459)
-# calibration_data_2min %>% filter(time == "2019-12-09 12:50:00", instrument_id=="CO_190134")
-# calibration_data %>% filter(time >= "2019-12-09 12:50:00", time <= "2019-12-09 12:52:00",instrument_id=="CO_190134") %>% View()
-# 
-# calibration_data %>%
-#   drop_na(notes) %>%
-#   filter(!grepl("filter", notes)) %>%
-#   distinct(instrument_id, notes) %>%
-#   arrange(instrument_id) %>% View()
-
+ 
 
 ```
 
@@ -2059,6 +2110,52 @@ ggarrange(plotlist = p, ncol = 2, nrow = 6) %>%
   annotate_figure(top = "Instrument Collocations")
 
 ```
+
+similar to above, but for manusctipt
+
+```{r, fig.height=14}
+p <- list()
+
+p[[1]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "BC_0066", y.variable = "BC_0063", 
+            slope_digits = 2, alpha_value = 0.7)  
+
+
+p[[2]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "CO2_14", y.variable = "CO2_19", 
+            alpha_value = 0.7
+            )  
+
+p[[3]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "NO2_2", y.variable = "NO2_1",  
+            slope_digits = 0, int_digits = 2, alpha_value = 0.7)  
+
+p[[4]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "PM25_176", y.variable = "PM25_205", int_digits = 6, rmse.digits = 6, alpha_value = 0.7)  
+p[[5]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "PMDISC_3", y.variable = "PMDISC_8", alpha_value = 0.7)  
+
+#that these are the only 2 non-screeend PTRAKS that were collocated 
+p[[6]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93",  alpha_value = 0.7)  
+
+# that these are the only 2 screeend PTRAKS that were collocated 
+p[[7]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "PMPTSCREEN_94", y.variable = "PMPTSCREEN_3", alpha_value = 0.7) 
+
+p[[8]] <- dt_stops3_colo_wide %>%
+  colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", alpha_value = 0.7)  
+
+
+print("Instrument Collocations")
+
+ggarrange(plotlist = p, ncol = 3, nrow = 4)  
+
+
+ggsave(file.path(image_path, "SI", "collocations.png"), height=14, width = 10) 
+
+```
+
 
 * NanoScan_3 correlates well with NanoScan_5 during 2019 but deviates around 2019-09, with the largest differences starting 2020-02 when the R2 drop a lot.   
 * Nanoscan 3  returned from TSI after being serviced on 2/13/20
@@ -2771,7 +2868,14 @@ dt_doe_l <- dt_doe %>%
   gather(pollutant, value, contains(c("BC", "Neph", "NO2", "PM2.5", "CO"))) %>% 
   mutate(
     source = ifelse(grepl("doe", pollutant), "DOE", "MM"),
-    pollutant = gsub("doe_", "", pollutant)
+    pollutant = gsub("doe_", "", pollutant),
+    pollutant = recode_factor(factor(pollutant),
+                               "BC" = "BC (ug/m3)",
+                               "Neph" = "Neph (bscat [x 10^-4]/m)",
+                               "NO2" = "NO2 (ppb)",
+                               "PM2.5" = "PM2.5 (ug/m3)",
+                              "CO" = "CO (ppb)"
+                               )
   ) %>% 
   spread(source, value) %>%
   drop_na(DOE, MM)
@@ -2781,23 +2885,13 @@ dt_doe_l <- dt_doe %>%
 ```{r, fig.height=10}
 print("2-min mobile monitoring collocations at AQS sites")
 
-dt_doe_l %>%
-  mutate(
-    #AQS Units
-    pollutant = recode_factor(factor(pollutant),
-                               "BC" = "BC (ug/m3)",
-                               "Neph" = "Neph (bscat [x 10^-4]/m)",
-                               "NO2" = "NO2 (ppb)",
-                               "PM2.5" = "PM2.5 (ug/m3)",
-                              "CO" = "CO (ppb)"
-                               )
-  ) %>%
+aqs_colo_p <- dt_doe_l %>%
   ggplot(aes(x=DOE, y=MM, )) + 
   facet_wrap_equal(~pollutant, scales="free") +
   theme(aspect.ratio = 1) + 
   geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
   geom_point(aes(col=location_doe)) + 
-  geom_smooth(aes(x=DOE, y=MM), method = "lm",inherit.aes = F ) + 
+  geom_smooth(aes(x=DOE, y=MM), method = "lm", se = F, inherit.aes = F ) + 
    stat_poly_eq(aes(label =  paste(stat(eq.label),
                                   stat(rr.label), sep = "*\", \"*")),
                formula = y~x, parse=T, #coef.digits = 2
@@ -2806,8 +2900,22 @@ dt_doe_l %>%
        y = "Mobile Monitoring",
        col = "AQS Site"
        )
-   
+  
+aqs_colo_p 
 ```
+
+
+same as above for manuscript (no CO or neph)
+
+```{r}
+
+aqs_colo_p %+% subset(dt_doe_l, grepl("BC|NO2|PM2.5", pollutant))
+
+ggsave(file.path(image_path, "SI", "2min_aqs_colo.png"), width = 9, height = 5)
+
+```
+
+
 
 ```{r}
 # table of fit
@@ -2875,7 +2983,17 @@ short_term_annual <- dt_doe %>%
 #note that DOE PM2.5 has no MM equivalent (yet)
 true_annual <- left_join(true_annual, short_term_annual) %>%
   drop_na(value) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(
+    #AQS Units
+    pollutant = recode_factor(factor(pollutant),
+                               "BC" = "BC (ug/m3)",
+                               "Neph" = "Neph (bscat [x 10^-4]/m)",
+                               "NO2" = "NO2 (ppb)",
+                               "PM2.5" = "PM2.5 (ug/m3)",
+                              "CO" = "CO (ppb)"
+                               )
+  ) 
 
 ```
 
@@ -2889,24 +3007,13 @@ true_annual <- left_join(true_annual, short_term_annual) %>%
 
 ```{r, fig.height=10}
 
-true_annual %>%
-  mutate(
-    #AQS Units
-    pollutant = recode_factor(factor(pollutant),
-                               "BC" = "BC (ug/m3)",
-                               "Neph" = "Neph (bscat [x 10^-4]/m)",
-                               "NO2" = "NO2 (ppb)",
-                               "PM2.5" = "PM2.5 (ug/m3)",
-                              "CO" = "CO (ppb)"
-                               )
-  ) %>%
-  
+annual_colo_p <- true_annual %>%
   ggplot(aes(x=true_avg, y=value, col=source)) + 
   facet_wrap_equal(~pollutant, scales="free") +
   theme(aspect.ratio = 1) +
   geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
-  geom_line(stat="smooth", method = "lm", size = 0.5, alpha = 0.5) +
   geom_point(aes(shape=location_doe), size=3) + 
+ # geom_line(stat="smooth", method = "lm", size = 0.5, alpha = 0.5) +
   
     labs(
          col = "2-min Est",
@@ -2915,7 +3022,20 @@ true_annual %>%
          y = "Estimate"
          )
 
+annual_colo_p
+
 ```
+
+
+same as above but for manuscript
+
+```{r}
+annual_colo_p %+% subset(true_annual, grepl("BC|NO2|PM2.5", pollutant))
+
+ggsave(file.path(image_path, "SI", "annual_aqs_colo.png"), width = 9, height = 5)
+
+```
+
 
  
 ```{r}
@@ -3034,15 +3154,65 @@ dt_stops6 <- dt_stops5 %>%
 
 # Final Data 
 
- 
-
-## stop data dropped 
-
 ```{r}
+# stop data 
 original_data <- dt_stops
 final_data <- dt_stops6
 
 ```
+
+```{r}
+# second-level data
+final_second_data <- final_data %>%
+  select(stop_id, instrument_id) %>%
+  left_join(dt2)
+
+
+```
+
+
+number of stops
+
+* NO2   ____
+* BC was probably dropped for having negative concentrations (outside the instrument measuremement range)   
+* CO2    
+* Neph (same as BC?)     
+* discmini (10-700)    
+
+```{r}
+
+s0 <- original_data %>%
+  filter(variable != "co_ppm") %>%
+  group_by(variable) %>%
+  summarize(
+    original_stops = length(unique(stop_id))
+  )
+s1 <- final_data %>%
+  group_by(variable) %>%
+  summarize(
+    final_stops = length(unique(stop_id))
+  )
+
+full_join(s0, s1) %>%
+  variable_relabel() %>%
+  mutate(variable = ifelse(grepl("UFP", variable), paste0(variable, ", ", ufp_range_nm, "nm"), as.character(variable) )) %>%
+  select(-ufp_range_nm) %>%
+  rbind(c("TOTAL", sum(.$original_stops), sum(.$final_stops))) %>%
+  mutate_at(vars(-variable), ~as.numeric(.)) %>%
+  mutate(
+    stops_dropped = original_stops - final_stops,
+    percent_stops_dropped = stops_dropped/original_stops*100
+  ) %>%
+  kable(caption = "Mobile monitoring stops", 
+        digits = 2, 
+        col.names = c("Pollutant", "Original Stops", "Final Stops", "Stops Dropped", "Percent Stops Dropped"), 
+        format.args = list(big.mark=', ')
+        ) %>%
+  kable_styling()
+    
+
+```
+
 
 
 ```{r}
@@ -3069,22 +3239,7 @@ saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rd
 
 
 
-
-* the proportion of data dropped 
-
-```{r}
-
-# original_data %>%
-#   summarize(
-#     N_original = n()
-#   ) %>%
-#   cbind(summarize(final_data, N_final = n())) %>%
-#   mutate(
-#     N_dropped = N_original - N_final,
-#     Proportion_dropped = N_dropped/N_original
-#   ) %>%
-#   kable(caption = "All Stop data dropped (). N = total median stops readings = 8 instruments x 309 sites x ~29 stops/site", digits = 2) %>%
-#   kable_styling()
+```{r, eval=F}
 
 original_data %>%
   summarize(
@@ -3101,8 +3256,9 @@ original_data %>%
 ```
 
 
-```{r}
- 
+```{r, eval=F}
+# tricky b/c of duplicate, collocated measurements, which were not included in the final dataset. we summarize this in terms of instrument-stops instead.
+
 n_final <- final_data %>%
   group_by(variable) %>%
   summarize(N_final = n())
@@ -3134,9 +3290,8 @@ saveRDS(final_data, file.path("Data", "Output", "stop_data.rda"))
 # #second data
 ## no need to save this if nothing changes really
 
-# dt3 %>%
-#   #left_join(locations) %>%
-#   saveRDS(., file.path("Data", "Output", "second_data.rda"))
+saveRDS(final_second_data, file.path("Data", "Output", "second_data.rda"))
+
 
 # variables
 save(
@@ -3204,4 +3359,13 @@ fieldnotes2 <- fieldnotes %>%
 *ideas    
   * comapre instrument readings to nearby stops (i.e., stations in the same air shed)     
     * this may be misleading in our case b/c we can smooth out 2-min/instant readings, which may correctly show very different readings?   
+
+# Citing packages
+
+```{r}
+# citation() # R
+# citation("DBI")  
+#citation("RMariaDB")  
+
+```
 
