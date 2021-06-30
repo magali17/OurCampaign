@@ -15,6 +15,16 @@ editor_options:
   chunk_output_type: console
 ---
 
+```{r, echo=F}
+##merge with github. always do these 4 steps all together. enter the following into the Terminal.
+# 
+###a. git pull origin master #do this before start editing & before you're read to upload changes again
+###b. git add _____.Rmd 
+###c. git commit -m "___my commit message in parentheses" 
+###d. git push origin master
+```
+
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = F, 
                       cache=F, cache.comments = F, 
