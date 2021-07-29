@@ -82,15 +82,18 @@ gitcreds::gitcreds_set() # select '2' and enter new token
       * there was a primary instrument used in the campaign the majority of the time and backup instruments produce similar readings during collocations    
         * unscreened P-TRAKs   
         * nephs   
-        * BC
+        * BC 
+        * temp, RH (HOBO)    
       * other reasons for not recalibrating instruments:   
         * the screened PTRAKs were not calibrated since only two backup instruments were collocated (3 and 94), and both were in good agreement    
         * CO instruments since none were in agreement with eachother (unclear which is the better/approariate reading)       
         * CO2 since the backup instrument was dropped         
     * if there was no primary instrument, however, readings were calibrated to the average of both instruments based on their collocations    
       * discminis   
-    * calibrate backup instruments when they deviate from the primary instrument using recent collocation data
+    * calibrate backup instruments when they deviate from the primary instrument **and backup instruments were used on their own at the begining of the study** using collocation data from early on in the study     
       * calibrate NanoScan (ns) 3 to ns 5 using data collected before __2019-04-01__ since 3 tended to read low and ns 3 values after this were not used to estimate site annual averages anyways    
+        * calibrations were done separately for total counts and for bin-specific counts   
+          * also checked that instruments were generally in agreement in their bin readings before 2/1/2020 (after which we know NS 3 starts to act strange)      
       * calibrate NO2_1 to NO2_2 using data collected before __2019-04-01__.     
         * Note that some NO2_1 values become negative, but 2-minute AQS collocations were more accurate    
     
@@ -154,6 +157,11 @@ gitcreds::gitcreds_set() # select '2' and enter new token
 
 * not including CO, which as excluded from this analysis as a whole, about 9% of the stop data were dropped based on the QC procedures outlined above. 
 
+
+
+
+
+
 # Upload data
 
 ```{r setup, include=FALSE}
@@ -165,13 +173,13 @@ knitr::opts_chunk$set(echo = F,
                       fig.height = 6, fig.width = 10
                       )  
 
-# Clear workspace of all objects and unload all extra (non-base) packages
-rm(list = ls(all = TRUE))
-if (!is.null(sessionInfo()$otherPkgs)) {
-  res <- suppressWarnings(
-    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
-      detach, character.only=TRUE, unload=TRUE, force=TRUE))
-}
+# # Clear workspace of all objects and unload all extra (non-base) packages
+# rm(list = ls(all = TRUE))
+# if (!is.null(sessionInfo()$otherPkgs)) {
+#   res <- suppressWarnings(
+#     lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+#       detach, character.only=TRUE, unload=TRUE, force=TRUE))
+# }
 
 pacman::p_load(knitr, kableExtra, 
                ggpubr, tidyverse,
@@ -333,6 +341,73 @@ instruments <- unique(dt0$instrument_id) %>%
   sort()
 
 ```
+
+
+NanoScan bin data
+
+
+```{r}
+drop_ns <- c("ns_geo_mean_nm", "ns_gsd", "ns_mean_nm"#, "ns_mode_nm"
+             )
+
+ns0 <- readRDS(file.path("Data", "Original", "ns_bin_data.rda")) %>%
+  rename(time = timeint) %>%
+  mutate(date = ymd(substr(time, 1, 10))) %>%
+  filter(
+    #drop instruments w/ few readings (only want a primary and backup instrument)
+    !instrument_id %in% drop_instruments,
+    # ? don't need these?
+    !variable %in% drop_ns
+    ) %>%
+  mutate(primary_instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         primary_instrument = factor(primary_instrument, levels = c("Primary", "Backup")),
+         
+         # ? rename bins 
+         variable = gsub("ns_|_nm", "", variable),
+         variable = gsub("_", ".", variable)
+         )
+
+#arrange bins & other variables at the end
+ns_levels <- str_subset(unique(ns0$variable), "[0-9]+") %>%
+  as.numeric() %>%
+  sort() %>%
+  #do this instead of as.character() to keep the ".0" in "154.0"
+  format(., nsmall = 1) %>% trimws() %>% #as.character() %>%
+  c(., str_subset(unique(ns0$variable), "[0-9]+", negate = T))
+
+ ns0 <- ns0 %>%
+   mutate(variable = factor(variable, levels = ns_levels))
+
+```
+
+temp, rh
+
+```{r}
+trh0 <- readRDS(file.path("Data", "Original", "weather_data.rda")) %>%
+  rename(time = timeint) %>%
+  mutate(date = ymd(substr(time, 1, 10))) %>%
+  filter(
+    # #drop instruments w/ few readings (only want a primary and backup instrument)
+    # !instrument_id %in% drop_instruments,
+    )  
+
+
+#ID primary instruments
+primary_instruments_trh <- trh0 %>%
+  group_by(instrument_id) %>%
+  summarize(n = n()) %>% 
+  filter(n == max(n)) %>%
+  ungroup() %>%
+  pull(instrument_id)
+
+trh0 <- trh0 %>%
+  mutate(primary_instrument = ifelse(instrument_id %in% primary_instruments_trh, "Primary", "Backup"),
+         primary_instrument = factor(primary_instrument, levels = c("Primary", "Backup")),
+         )
+
+```
+
+
 
 MA200 data for QC
 
@@ -701,6 +776,20 @@ dt0 %>%
 
 ```
 
+temp & RH
+
+* TRH_1 was the primary instrument  
+
+```{r}
+#plot   
+trh0 %>%
+  distinct(date, variable, instrument_id) %>%  
+  ggplot(aes(x=date, y= interaction(variable, instrument_id), col=variable)) + 
+  geom_point() + 
+  labs(y = "variable.instrument_id")
+
+```
+
 
 # Quality Assurance 
 
@@ -788,6 +877,10 @@ dt0 %>%
 
 
 ```
+
+## Temp, RH
+
+* there are no "status" (error) variable values for these measures  
 
 
 ### Update Data
@@ -1699,59 +1792,40 @@ dt_stops <- dt %>%
 
 ```
 
- 
-summary of stop-level data 
+-same as above but for the nanoscan bins
 
-```{r, fig.height=12, eval=F}
-#* labels are for the min/max reading of each instrument 
- 
- 
-p <- list()
-
-#give each facet its own instrument_id legend
-for(i in seq_along(ap)) {
-  #i=1
-
-  #only plot a subset of the data
-  df <- dt_stops %>%
-            ##drop Roosevelt Garage
-    filter(#location != "MS0000",
-           variable== ap[i])  
-    
-  #summary table for labels
-  df_sum <- df %>%
-    # add min/max labels
-    group_by(primary_instrument, instrument_id) %>%
-    summarize(
-      min = min(value),
-      max=max(value)
-      )  %>%
-    #make long format to avoid overlapping labels later
-    gather(kind, value, min,max)
-    
-  p[[i]] <- df %>% 
-    
-    ggplot(aes(x=value, col=instrument_id, linetype=primary_instrument),) + 
-    geom_density() + 
-    facet_wrap(~variable, scales="free") +
-    
-    geom_text_repel(data=df_sum, aes(x=value, y=0, label=value), show.legend = F ) +
-     
-    #theme(legend.justification=c(1,1), legend.position=c(1,1)) + 
-    #don't show linetype in legend 
-    guides(linetype = FALSE)
-   
-    # don't do since we have values <=0 
-    #scale_x_log10()
-  
-  p[[i]]
-  
-  }
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 5)
-
+```{r}
+ns_stops <- ns0 %>%
+  #calculate arrival time at any stop. also ensure that duplicate instruments are aligned correctly
+  group_by(runname, date, location, stop_id) %>%
+  #only keep first 3 min of data at each stop
+  filter(time- min(time) <= max_stop_duration) %>%
+  mutate(time = min(time)) %>%  
+   group_by(runname, date, time, location, stop_id, instrument_id, variable, primary_instrument) %>%
+  summarize(
+    value = median(value),
+  ) %>%
+  ungroup()
 
 ```
+
+-same as above for temp, rh data 
+
+```{r}
+trh_stops <- trh0 %>%
+  #calculate arrival time at any stop. also ensure that duplicate instruments are aligned correctly
+  group_by(runname, date, location, stop_id) %>%
+  #only keep first 3 min of data at each stop
+  filter(time- min(time) <= max_stop_duration) %>%
+  mutate(time = min(time)) %>%  
+   group_by(runname, date, time, location, stop_id, instrument_id, variable, primary_instrument) %>%
+  summarize(
+    value = median(value),
+  ) %>%
+  ungroup()
+
+```
+
 
 
 amount of data outside of expected instrument ranges
@@ -1762,8 +1836,7 @@ amount of data outside of expected instrument ranges
 ```{r}
 dt_stops %>%
   #observations per pollutant
-  group_by(variable, #instrument_id
-           ) %>%
+  group_by(variable) %>%
   mutate(n_original = n()) %>%
   ungroup() %>%
   
@@ -1789,6 +1862,44 @@ dt_stops %>%
 
 ```
 
+- same as above for temp, rh
+
+* all temp, rh values are within the instrument range 
+
+```{r}
+instrument_range_trh <- data.frame(
+  variable = unique(trh_stops$variable),
+  Min = c(0, -4),
+  Max = c(95, 158)
+)
+
+trh_stops %>%
+  #observations per pollutant
+  group_by(variable) %>%
+  mutate(n_original = n()) %>%
+  ungroup() %>%
+  
+  left_join(instrument_range_trh) %>%  
+  mutate(below_min = value < Min,
+         above_max = value > Max
+         ) %>% View()
+  group_by(variable) %>%
+  summarize(
+    n_original = unique(n_original),
+    n_below_min = sum(below_min),
+    n_above_max = sum(above_max),
+    
+    prop_below_min = mean(below_min),
+    prop_above_max = mean(above_max),
+    total_prop_out_of_range = sum(prop_below_min, prop_above_max, na.rm = T)
+  ) %>%
+  kable(caption = "proportion of data outside the instrument range. N = number of stops (~309 stops x ~29 visits/stop)", digits = 2) %>%
+  kable_styling()
+
+
+```
+
+
 
 ## Update data
 
@@ -1813,6 +1924,12 @@ dt_stops2 <- dt_stops %>%
     !(variable %in% c("pnc_screen") & value < min_screen_ufp ),
     )
   
+#only keep appropriate nanoscan bin data
+ns_stops2 <- dt_stops2 %>%
+  filter(variable== "ns_total_conc") %>%
+  distinct(date, location, instrument_id) %>%
+  left_join(ns_stops)
+
 
 ### --> need this dataset later? 
 
@@ -2019,7 +2136,7 @@ dt_stops3 <- dt_stops2 %>%
 * No primary standard for UFPs unless instrument returned to TSI.  So need to address between-instrument data and how well they are reading the peaks.  
 
 ```{r}
-#note: not including lab calibration data since adding calibration_data_2min causes issues b/c: a) there can be multiple diff refernce concentrations during any given time; and b) it's likely but not guaranteed that duplicate instruments were measuring the same reference concentrations at the same time
+#note: not including lab calibration data since adding calibration_data_2min causes issues b/c: a) there can be multiple diff reference concentrations during any given time; and b) it's likely but not guaranteed that duplicate instruments were measuring the same reference concentrations at the same time
 
 
 # #header names in both sources of data: stop and room data 
@@ -2037,10 +2154,35 @@ dt_stops3_colo_wide <- dt_stops3_colo %>%
     site = substr(runname, 12,14)
   )
 
- 
- 
+```
+
+-same as above for NS data 
+
+```{r}
+ns_stops2_colo <- ns_stops2 %>%
+  select(common_names, variable)  
+
+ns_stops2_colo_wide <- ns_stops2_colo %>%  
+  spread(instrument_id, value) %>%
+  mutate(site = substr(runname, 12,14)) %>%
+  drop_na()
 
 ```
+
+-same as above for temp, rh data
+
+```{r}
+trh_stops_colo <- trh_stops %>%
+  select(common_names, variable)  
+
+trh_stops_colo_wide <- trh_stops_colo %>%  
+  spread(instrument_id, value) %>%
+  mutate(site = substr(runname, 12,14)) %>% #View()
+  drop_na()
+
+```
+
+
 
 * most instrument collocations look okay, except for:      
   * CO2_19  - drop since it is never used on its own?     
@@ -2266,6 +2408,37 @@ dt_stops3_colo_wide %>%
 ```
 
 
+-same as above for ns bins during Feb-Mar 2019 since 
+
+* showing data collected before `r drop_ns3` since this is when we know NS3 begins to fail   
+  * things looked much worse when viewing all the data, for some bins more than others    
+
+```{r}
+ns_stops2_colo_wide %>%
+  filter(date < drop_ns3
+         ) %>%
+  
+  ggplot(aes(x=PMSCAN_5, y=PMSCAN_3)) + 
+  facet_wrap_equal(~variable, scales="free") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.4) +
+  geom_point(alpha=0.5) +
+  geom_smooth(se = F, method="lm",) +
+  #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  stat_poly_eq(aes(label =  paste(stat(eq.label),
+                                  stat(rr.label), sep = "*\", \"*")),
+               formula = y~x, parse=T, 
+               coef.digits = 2
+               ) +
+  
+  labs(title = "Comparison of collocated NanoScan bins",
+       subtitle = "linear fit are for all the data on each panel"
+  )
+
+
+```
+
+
+
 * NO2_1
 
 ```{r}
@@ -2301,16 +2474,27 @@ dt_stops3 %>%
 ```
 
 
+* temp, rh
+
+** collocation readings are similar.      
+** Also, TRH_2 was never used on its own, so there is no need to calibrate readings. This approach is similar to our approach with other instruments. 
+
 ```{r}
-# ## Collocation instrument time trends
-# 
-# *see if duplicate instruments behave differenlty over time when in exact same place 
-# 
-# * still see some trends related to how long instruments are run (is this real?)   
+ trh_stops_colo_wide %>%
+  ggplot(aes(x=TRH_1, y=TRH_2)) + 
+  facet_wrap_equal(~variable, scales="free") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.4) +
+  geom_point(alpha=0.5) +
+  geom_smooth(se = F, method="lm",) +
+  stat_poly_eq(aes(label =  paste(stat(eq.label),
+                                  stat(rr.label), sep = "*\", \"*")),
+               formula = y~x, parse=T, 
+               coef.digits = 2
+               ) +
+  labs(title = "Comparison of collocated HOBO instruments")
 
 ```
- 
- 
+
 
 # Calibrate Instruments based on duplicate collocations 
 
@@ -2464,6 +2648,41 @@ mean_slope_disc_8 <- disc_8_lm$mean
 
 ```
 
+- same as above for nanoscan bins, median, mode estimates 
+
+```{r}
+
+ns_bins_lm <- ns_stops2 %>%
+  filter(#grepl("ns_total", variable),
+         #use recent collocation data  
+         date < drop_ns3_v2
+         ) %>%
+  select(time, instrument_id, variable, value) %>% 
+  spread(instrument_id, value) %>% 
+  drop_na() %>% 
+  
+  group_by(variable) %>%
+  nest() %>%     
+  mutate(
+    lm = map(data, ~lm(PMSCAN_3~PMSCAN_5, data = .x)),
+    tidied = map(lm, tidy)
+  ) %>%
+  unnest(tidied) %>%
+  select(term, estimate) %>%
+  spread(term, estimate) %>%
+  
+  rename(int = `(Intercept)`,
+         slope = PMSCAN_5
+         )
+  
+# --> modify? 
+
+# ns_bins_5_int <- ns_bins_lm$`(Intercept)`
+# ns_bins_5_slope <- ns_bins_lm$PMSCAN_5
+
+```
+
+
 * estimates from Cooper's work. this might be updated
 
 ```{r, echo=T}
@@ -2514,6 +2733,26 @@ dt_stops4 <- dt_stops3 %>%
 
 
 ```
+
+-same as above for ns bins 
+
+
+```{r}
+
+ns_stops3 <- ns_stops2 %>%
+  rename(value_c1 = value) %>%  
+  # adjust earliest PMSCAN_3 readings based on PMSCAN_5 lm fit
+  left_join(ns_bins_lm) %>%
+  mutate(
+    value = ifelse(grepl("PMSCAN_3", instrument_id) & date < drop_ns3_v2, 
+                   (value_c1-int)/slope,
+                   value_c1)
+    )
+
+```
+
+
+
 
 
 
@@ -2647,6 +2886,49 @@ dt_stops5 <- rbind(df1, df2, df3) %>%
   select(-c(n, has_primary)) %>%
   arrange(time)
 
+```
+
+- same as above for NanoScan bins 
+
+```{r}
+temp <- ns_stops3 %>%
+  group_by(runname, date, time, location, stop_id, variable) %>%
+  mutate(
+    n = n(),
+    has_primary = grepl("Primary", paste(unique(primary_instrument), collapse = ",")),
+    ) %>%
+  ungroup()
+
+#only one instrument used
+df1 <- temp %>%
+    filter(n==1)
+
+#duplicate instruments used, including a primary instrument
+df2 <- temp %>%
+    filter((n==2 & has_primary==TRUE),
+      primary_instrument=="Primary")  
+
+
+ns_stops3 <- rbind(df1, df2) %>%
+  select(-c(n, has_primary)) %>%
+  arrange(time)
+
+
+```
+
+-same as above for temp, RH
+
+* backup instrument was never used on its own
+
+```{r}
+#the backup instrument was never used on it's own, so we can drop this
+# trh_stops_colo %>%  
+#   spread(instrument_id, value) %>%
+#   filter(is.na(TRH_1) &  !is.na(TRH_2))
+
+trh_stops2 <- trh_stops %>%
+  filter(instrument_id == "TRH_1")
+  
 ```
 
 
@@ -2894,11 +3176,13 @@ aqs_colo_p <- dt_doe_l %>%
   facet_wrap_equal(~pollutant, scales="free") +
   theme(aspect.ratio = 1) + 
   geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) +
-  geom_point(aes(col=location_doe)) + 
+  geom_point(aes(col=location_doe),
+             alpha=0.5
+             ) + 
   geom_smooth(aes(x=DOE, y=MM), method = "lm", se = F, inherit.aes = F ) + 
    stat_poly_eq(aes(label =  paste(stat(eq.label),
                                   stat(rr.label), sep = "*\", \"*")),
-               formula = y~x, parse=T, #coef.digits = 2
+               formula = y~x, parse=T, coef.digits = 2
                ) +
   labs(
        y = "Mobile Monitoring",
@@ -3243,58 +3527,24 @@ saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rd
 
 
 
-```{r, eval=F}
-
-original_data %>%
-  summarize(
-    N_original = n()
-  ) %>%
-  cbind(summarize(dt_stops5, N_final = n())) %>%
-  mutate(
-    N_dropped = N_original - N_final,
-    Proportion_dropped = N_dropped/N_original
-  ) %>%
-  kable(caption = "Stop data dropped (not including CO data). N = total median stops readings = 8 instruments x 309 sites x ~29 stops/site", digits = 2) %>%
-  kable_styling()
-
-```
-
-
-```{r, eval=F}
-# tricky b/c of duplicate, collocated measurements, which were not included in the final dataset. we summarize this in terms of instrument-stops instead.
-
-n_final <- final_data %>%
-  group_by(variable) %>%
-  summarize(N_final = n())
-
-original_data %>%
-  group_by(variable) %>%
-  summarize(N_original = n()) %>%
-  left_join(n_final) %>%
-  mutate(
-    N_final = ifelse(is.na(N_final), 0, N_final),
-    N_dropped = N_original-N_final,
-    #N_dropped = ifelse(is.na(N_dropped), )
-    Proportion_dropped = N_dropped/N_original
-  ) %>%
-  variable_relabel() %>%
-  kable(caption = "Data dropped. N = number of stops", digits = 3) %>%
-  kable_styling()
-
-```
-
+ 
 
 ## Save data 
 
-```{r, eval=T}
+```{r, eval=F}
 # median stop data 
 ## units: nephs read bscatx10^-4 (similar to DOE). 
 saveRDS(final_data, file.path("Data", "Output", "stop_data.rda"))
 
 # #second data
 ## no need to save this if nothing changes really
-
 saveRDS(final_second_data, file.path("Data", "Output", "second_data.rda"))
+
+# nanoscan bin stop data 
+saveRDS(ns_stops3, file.path("Data", "Output", "ns_stop_data.rda"))
+
+#temp data
+saveRDS(trh_stops2, file.path("Data", "Output", "trh_stop_data.rda"))
 
 
 # variables
@@ -3355,7 +3605,14 @@ fieldnotes2 <- fieldnotes %>%
 
 ## Resources
 
-**email from Jill Schulte** regarding instrument QC: 
+### Future Ideas for QCing data
+
+* Kerckhoffs 2021 (Nationwide UFP modeling from mobile monitoring) droppped CPC concentrations <= 500 ptc/m3; or if conc increased/decreased in one second by a factor of 10+ since these reflect malfunctions in the instruments (they cite Kerckhoffs 2016)
+
+
+
+
+### **email from Jill Schulte** regarding instrument QC: 
 
 * "I think you'll find much of the information you're looking for on our Information For Air Monitoring Professionals webpage: https://ecology.wa.gov/Regulations-Permits/Guidance-technical-assistance/Information-for-air-monitoring-professionals. If you open the "Other Procedures" tree, the document "Air Monitoring Documentation, Data Review, and Validation Procedure" has general information about how we validate data, apply completeness criteria, and use 1-minute averages for validation. You'll also find more specific information in each of our standard operating procedures for specific pollutants. You can open the SOP trees for gases and particulate matter instruments on the same page, and most have a "Data Validation and Quality Assurance" section. 
 * We also rely heavily on EPA's Quality Assurance Handbook for Air Pollution Measurement Systems Volume II: https://www.epa.gov/sites/production/files/2020-10/documents/final_handbook_document_1_17.pdf. "
@@ -3364,7 +3621,7 @@ fieldnotes2 <- fieldnotes %>%
   * comapre instrument readings to nearby stops (i.e., stations in the same air shed)     
     * this may be misleading in our case b/c we can smooth out 2-min/instant readings, which may correctly show very different readings?   
 
-# Citing packages
+### Citing packages
 
 ```{r}
 # citation() # R

@@ -525,9 +525,16 @@ map0 +
 
 
 ```{r}
-covars <- c("log_m_to_a1", "log_m_to_a123", 
-            "log_m_to_l_airp", #"log_m_to_airp", 
-            "log_m_to_rr", "pop10_s01000", "elev_elevation")
+# covars <- c("log_m_to_a1", #"log_m_to_a123", 
+#             "log_m_to_l_airp", #"log_m_to_airp", 
+#             "log_m_to_rr", "pop10_s01000", "elev_elevation")
+
+covars <- c("log_m_to_a1", "log_m_to_a1_a2_intersect",  
+            "log_m_to_l_airp",
+            "log_m_to_ry", 
+            "log_m_to_l_port",
+            "log_m_to_coast"
+            )
 
 mm_act <- mm_shp %>%
   select(covars) %>%
@@ -535,21 +542,25 @@ mm_act <- mm_shp %>%
   rbind(mutate(select(act_shp, covars), Kind = "ACT Cohort")) %>%
   st_drop_geometry()
 
-
 mm_act %>%
   gather("Covariate", "Value", -Kind) %>%
   mutate(
     Covariate = recode_factor(factor(Covariate),
-                               "elev_elevation" = "Elevation (m)",
-                              "log_m_to_a1" = "Log Meters to A1 Road",
-                              "log_m_to_a123"  = "Log Meters to A1, A2 or A3 Road",
-                               "log_m_to_l_airp" = "Log Meters to Large Airport",
-                              "log_m_to_rr" = "Log Meters to Railroad",
-                              "pop10_s01000" = "Population Within a 1 km Radius"
+                              "log_m_to_a1" = "Log Meters to A1 Road", 
+                              "log_m_to_a1_a2_intersect" = "Log Meters to A1-A2 Intersection",
+                              "log_m_to_l_airp" = "Log Meters to Large Airport",
+                              "log_m_to_ry" = "Log Meters to Railyard",
+                              "log_m_to_l_port" = "Log Meters to Large Port",
+                              "log_m_to_coast" = "Log Meters to Coast"
+                              #  "elev_elevation" = "Elevation (m)",
+                              # "log_m_to_a1" = "Log Meters to A1 Road",
+                              # "log_m_to_a123"  = "Log Meters to A1, A2 or A3 Road",
+                              #  "log_m_to_l_airp" = "Log Meters to Large Airport",
+                              # "log_m_to_rr" = "Log Meters to Railroad",
+                              # "pop10_s01000" = "Population Within a 1 km Radius"
                                )
     
   ) %>%
-  
   
   ggplot(aes(x=Value, fill=Kind)) + 
   facet_wrap(~Covariate, scales="free") + 
@@ -559,8 +570,25 @@ mm_act %>%
   
   labs(fill = "Location")
    
-ggsave(file.path("..", "Manuscript", "Images", "f2_density_plots.jpg"), width = 10, height = 8)
+ggsave(file.path("..", "Manuscript", "Images", "density_plots.jpg"), width = 10, height = 8)
 
 ```
+
+
+# Route Satistics
+
+
+```{r}
+# mm, mm_shp
+
+ 
+# mm %>%
+#   group_by(Route) %>%
+#   summarize(
+#     stops = length(unique(native_id))
+#   )
+
+```
+
 
 

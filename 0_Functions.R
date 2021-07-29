@@ -158,11 +158,13 @@ alt_boxplot <- function(df, var, min_q=0.025, max_q=0.975){
     #calculate quantiles
     summarize(
       N = n(),
+      Min = min(var),
       Qmin = quantile(var, min_q),
       Q25 = quantile(var, 0.25),
       Q50 = quantile(var, 0.50),
       Q75 = quantile(var, 0.75),
-      Qmax = quantile(var, max_q)
+      Qmax = quantile(var, max_q),
+      Max = max(var)
     )
   
   names(df)[names(df)==var] <- var
@@ -290,30 +292,15 @@ variable_relabel <- function(dt, var = "variable"#, add_instrument=F
   dt <- dt %>% 
     rename(var=var) 
   
-  # if(add_instrument ==TRUE){
-  #   dt <- dt %>%
-  #     mutate(
-  #       instrument = recode_factor(factor(var),
-  #                                  "co_ppm" = "CO (ppm)",
-  #                                  "co2_umol_mol" = "CO2 (ppm)",
-  #                                  "ma200_ir_bc1" = "BC (ng/m3)",
-  #                                  "neph_bscat" = "Neph (bscat/m)",
-  #                                  "pm2.5_ug_m3" = "PM2.5 (ug/m3)",
-  #                                  "no2" = "NO2 (ppb)",
-  #                                  "ns_total_conc" = "UFP (pt/cm3)", #, 10-420 nm (pt/cm3)", #"UFP_NanoScan (pt/cm3)",
-  #                                  "pmdisc_number" = "UFP (pt/cm3)", #, 10-700 nm (pt/cm3)", #"UFP_DiSCmini (pt/cm3)",
-  #                                  "pnc_noscreen" = "UFP (pt/cm3)", #, 20-1,000 nm (pt/cm3)", #"UFP_PTRAK (pt/cm3)",
-  #                                  "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm (pt/cm3)" #"UFP_PTRAK_screened (pt/cm3)"
-  #       )
-  #     )
-  
   dt <- dt %>%
     mutate(
       ufp_range_nm = ifelse(var=="ns_total_conc", "10-420",
                          ifelse(var=="pmdisc_number", "10-700",
                                 ifelse(var=="pnc_noscreen", "20-1,000",
-                                       ifelse(var=="pnc_screen", "50-1,000", "-"
-                                       )))),
+                                       ifelse(var=="pnc_screen", "50-1,000", 
+                                              ifelse(var=="pnc_20_50", "20-50",
+                                                     "-"
+                                       ))))),
       #ufp_range_nm = factor(ufp_range_nm, levels = c("10-700", "10-420", "20-1,000", "50-1,000")),
       
       var = recode_factor(factor(var),
@@ -323,14 +310,15 @@ variable_relabel <- function(dt, var = "variable"#, add_instrument=F
                           "neph_bscat" = "Neph (bscat/m)",
                           "pm2.5_ug_m3" = "PM2.5 (ug/m3)",
                           "no2" = "NO2 (ppb)",
-                          "ns_total_conc" = "UFP (pt/cm3)", #, 10-420 nm (pt/cm3)", #"UFP_NanoScan (pt/cm3)",
-                          "pmdisc_number" = "UFP (pt/cm3)", #, 10-700 nm (pt/cm3)", #"UFP_DiSCmini (pt/cm3)",
-                          "pnc_noscreen" = "UFP (pt/cm3)", #, 20-1,000 nm (pt/cm3)", #"UFP_PTRAK (pt/cm3)",
-                          "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm (pt/cm3)" #"UFP_PTRAK_screened (pt/cm3)"
+                          "ns_total_conc" = "UFP (pt/cm3)", #, 10-420 nm  
+                          "pmdisc_number" = "UFP (pt/cm3)", #, 10-700 nm  
+                          "pnc_noscreen" = "UFP (pt/cm3)", #, 20-1,000 nm
+                          "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm  
+                          "pnc_20_50" = "UFP (pt/cm3)", #, 20-50 nm  
       ),
       var = factor(var, levels = c("Neph (bscat/m)",  "PM2.5 (ug/m3)",
                                    "BC (ng/m3)", 
-                                   "UFP (pt/cm3)", #, 10-700 nm (pt/cm3)", "UFP, 10-420 nm (pt/cm3)", "UFP, 20-1,000 nm (pt/cm3)", "UFP, 50-1,000 nm (pt/cm3)",
+                                   "UFP (pt/cm3)", 
                                    "NO2 (ppb)",
                                    "CO2 (ppm)", 
                                    
