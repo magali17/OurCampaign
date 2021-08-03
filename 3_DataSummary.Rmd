@@ -34,13 +34,13 @@ knitr::opts_chunk$set(echo = F,
                       fig.height = 6, fig.width = 10
                       )  
 
-# Clear workspace of all objects and unload all extra (non-base) packages
-rm(list = ls(all = TRUE))
-if (!is.null(sessionInfo()$otherPkgs)) {
-  res <- suppressWarnings(
-    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
-      detach, character.only=TRUE, unload=TRUE, force=TRUE))
-}
+# # Clear workspace of all objects and unload all extra (non-base) packages
+# rm(list = ls(all = TRUE))
+# if (!is.null(sessionInfo()$otherPkgs)) {
+#   res <- suppressWarnings(
+#     lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+#       detach, character.only=TRUE, unload=TRUE, force=TRUE))
+# }
 
 pacman::p_load(knitr, kableExtra, broom,
                ggpubr, tidyverse,
@@ -56,22 +56,24 @@ pacman::p_load(knitr, kableExtra, broom,
                VCA, #anovaVCA()
                gstat, #variogram()
                ggpmisc, # for ggplot() geom="table"
-               units #convert between e.g., m to km
+               units, #convert between e.g., m to km
+               colorspace #create color palates that "look good". e.g., rainbow_hcl(3)
                )    
  
 
 set.seed(1)
 
 image_path <- file.path("..", "Manuscript", "Images")
-theme_set(theme(legend.position = "bottom"))
+
+#theme_set(theme(legend.position = "bottom"))
+
+theme_set(theme_bw())
+theme_update(legend.position = "bottom")
 
 ```
 
 
 # Upload data
-
-
-
 
 ###--> add uncalibrated data/other data for sensitivity analyses 
 
@@ -105,12 +107,26 @@ crs_m <- 32148
 crs_deg <- 4326 #WGS84. in decimal degrees
 
 #shapefiles
-monitoring_area_shp <- read_sf(file.path("..", "GIS", "Shapefiles", "Monitoring", "monitoring_area_filled_in.shp")) %>%
+monitoring_area_shp <- readRDS(file.path("Data", "Output", "GIS", "monitoring_area_shp2.rda")) %>%
   #convert from 4269 
   st_transform(crs_deg)
 
+# monitoring_area_shp <- read_sf(file.path(
+#   "Data", "Output", "GIS", "monitoring_area_shp2.rda"
+#   #"..", "GIS", "Shapefiles", "Monitoring", "monitoring_area_filled_in.shp"
+#   )
+#   ) %>%
+#   #convert from 4269 
+#   st_transform(crs_deg)
+
 ```
 
+```{r}
+gis_path0 <- file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles")
+# project_crs <- 4326  #lat/long
+# m_crs <- 32148 #meters
+
+```
 
 ```{r}
 # sec <- sec0 %>%
@@ -153,7 +169,7 @@ stop_no <- stops0 %>%
   distinct(location) %>% 
   mutate(location_no = row_number()) 
 
-stops <- stops0 %>%
+stops0.1 <- stops0 %>%
   select(keep_names) %>%
   #add new UFP estimates
   rbind(ufp_20_50) %>%
@@ -177,8 +193,14 @@ stops <- stops0 %>%
 ```
 
 ```{r}
+
 # add labels to ns data
 ns <- ns0 %>%
+  #don't look at this for now?
+  filter(!variable %in% c("mode")) %>%
+  
+  # add stop #
+  left_join(stop_no) %>%
   mutate(
     ufp_range_nm = case_when(
       variable == "11.5" ~ "10.0-13.3",
@@ -194,14 +216,69 @@ ns <- ns0 %>%
       variable == "205.4" ~ "177.8-237.1",
       variable == "273.8" ~ "237.1-316.2",
       variable == "365.2" ~ "316.2-421.7",
+      variable == "median" ~ "median"#,
+      #variable == "mode" ~ "mode",
       )
-  )
+  ) %>%
+  # add other labels/temporal variables
+  mutate(
+    day = wday(time,label = T, week_start = 1),
+    hour = hour(time),
+    
+  ) %>%
+  add_season(.date_var = "date") %>%
+  mutate(pollutant = "UFP (pt/cm3)",
+         pollutant2 = paste0(pollutant, ", ", ufp_range_nm)
+         ) 
 
+#common variable
+bin_var_lvs <- ns %>%
+  distinct(variable, ufp_range_nm) %>%
+  arrange(variable) %>%
+  pull(variable) %>%
+  as.character() %>%
+  c(., "pnc_20_50", "pnc_screen")
+  
+bin_range_lvs <- ns %>%
+  distinct(variable, ufp_range_nm) %>%
+  arrange(variable) %>%
+  pull(ufp_range_nm) %>%
+  c(., "20-50", "50-1,000")
+
+ptrak_bin_range <- c("20-50", "50-1,000")
+ns_bin_range <- setdiff(bin_range_lvs, c("median", ptrak_bin_range))
+
+
+### --> shouldn't this be done already? 
+#ns <- ns %>% drop_na(value)
 
 ```
 
 
-### --> separate bin counts from total counts 
+```{r}
+bin_vars <- intersect(names(stops0.1), names(ns))
+
+stops <- stops0.1 %>%
+  #don't include PTRAK bins here
+  filter(!variable %in% c("pnc_20_50", "pnc_screen")) #%>%
+  # mutate(
+  #   instrument = ifelse(ifelse(grepl("pnc_", variable), "P-TRAK", "NanoScan"),)
+  # )
+  
+stops_bins <- stops0.1 %>%
+  #don't include PTRAK bins here
+  filter(variable %in% c("pnc_20_50", "pnc_screen")) %>%
+  select(bin_vars) %>%
+  rbind(select(ns, bin_vars)) %>%
+  mutate(
+    instrument = ifelse(grepl("pnc_", variable), "P-TRAK", "NanoScan"),
+    #organize bins
+    variable = factor(variable, levels = bin_var_lvs),
+    ufp_range_nm = factor(ufp_range_nm, levels = bin_range_lvs)
+  )
+
+```
+
 
 
 
@@ -223,15 +300,27 @@ uniqe_variables <-
   factor(unique(stops$variable)), 
                            ref = "no2" )
 
+bin_instruments <- sort(unique(stops_bins$instrument))
+
 ```
 
 # Route Statistics
 
+#### --> add ANNIE's
+
+```{r}
+# annie's work 
+on_road <- readRDS(file.path("Data", "Annie", "route_stats_08.02.21.rds"))
+
+```
+
+
+
 ```{r}
 # route distance
-
+ 
 routes_shp <- read_sf(file.path(gis_path0, "Routes 190910", "All routes.shp")) %>%
-  st_transform(project_crs) %>%
+  st_transform(crs_deg) %>%
   mutate(
     Route = as.factor(Route)
   )
@@ -248,7 +337,6 @@ specify_decimal <- function(x, k) {
   return(result)
 }
 
-#specify_decimal(1.2, 3)
 
 ```
 
@@ -313,23 +401,23 @@ tot <- route_stats %>%
     total_distance_km = sum(total_distance_km)
     )
 
-# annie's data
-on_road <- data.frame(
-  Route = c(seq(1:9), ""),
-  no_road_segments = NA,
-  median_iqr_drive_time_per_drive_hrs = NA,
-  total_drive_time_hrs = NA
-)
+# # annie's data
+# on_road <- data.frame(
+#   Route = c(seq(1:9), ""),
+#   no_road_segments = NA,
+#   median_iqr_drive_time_per_drive_hrs = NA,
+#   total_drive_time_hrs = NA
+# )
 
-# ombine
+# combine
 route_stats1 <- route_stats %>%
   rbind(tot) %>%
   left_join(on_road) 
 
 route_stats1 %>%
-
   kable(caption = "Route statistics. Number of sampling dates includes makeup routes, which may have been slightly altered.", 
-        col.names = c("Route", "No. Stops", "No. Sampling Dates", "Distance (mi)","Distance (km)", "Total Distance (mi)", "Total Distance (km)", names(on_road)[-1]),
+        col.names = c("Route", "No. Stops", "No. Sampling Dates", "Distance (mi)","Distance (km)", "Total Distance (mi)", "Total Distance (km)", "No. Road Segments", "Median (IQR) Drive Time (hr)", "Total Drive Time (hr)" #names(on_road)[-1]
+                      ),
         digits = 0, 
         format.args = list(big.mark = ",")
         ) %>%
@@ -498,6 +586,26 @@ location_quant <- stops %>%
          max_min = Max/Min
          )
 
+location_quant_bins <- stops_bins %>%
+  #calc stats for alternative boxplots
+  group_by(pollutant, ufp_range_nm, instrument, variable, location, location_no) %>%
+  alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>%
+  mutate(iqr = Q75-Q25,
+         qmax_qmin = Qmax/Qmin,
+         max_min = Max/Min,
+         
+         #organize bins
+         variable = factor(variable, levels = bin_var_lvs),
+    ufp_range_nm = factor(ufp_range_nm, levels = bin_range_lvs)
+         )
+
+
+
+
+
+#levels(location_quant_bins$ufp_range_nm)
+
+
 ```
 
 ```{r}
@@ -632,27 +740,45 @@ visit_conc <- stops %>%
     Median = quantile(value, 0.50),
     Q95 = quantile(value, 0.95),
     )  
+## for bins
+visit_conc_bins <- stops_bins %>%
+  group_by(pollutant, ufp_range_nm, variable, instrument) %>%
+  summarize(
+    Q05 = quantile(value, 0.05),
+    Median = quantile(value, 0.50),
+    Q95 = quantile(value, 0.95),
+    )  %>%
+  arrange(instrument) %>%
+  mutate(
+    #organize bins
+         variable = factor(variable, levels = bin_var_lvs),
+    ufp_range_nm = factor(ufp_range_nm, levels = bin_range_lvs)
+  )
 
 ```
 
-
+ 
 ```{r}
+line_col <- "red"
+line_a <- 0.5
 
 print("Distribution of visit concentrations by site for PM2.5, BC, NO2 and CO2 (N~29 visits per site). Boxes show the site-specific 25th, 50th and 75th quantile; whiskers show the 5th and 95th quantiles. Vertical lines show the median (solid), 5th (dashed), and 95th (dashed) quantile concentration for all the sites.")
 
 #non-ufp plots
 location_quant %>%
   filter(!grepl("UFP", pollutant)) %>%
-  
-  ggplot(aes(y=factor(location_no), col=ufp_range_nm)) +
-  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
-  
+
+  ggplot(aes(y=factor(location_no), #col=ufp_range_nm
+             )) +
+  geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity", 
+               #alpha=0.2
+               ) +
   # show overall pollutant quantiles: 5, 50, 95 
-  geom_vline(data=filter(visit_conc, !grepl("UFP", pollutant)), aes(xintercept = Median), alpha=0.4, linetype=1) +
-  geom_vline(data=filter(visit_conc, !grepl("UFP", pollutant)), aes(xintercept = Q05), alpha=0.4, linetype=2) +
-    geom_vline(data=filter(visit_conc, !grepl("UFP", pollutant)), aes(xintercept = Q95), alpha=0.4, linetype=2) +
+  geom_vline(data=filter(visit_conc, !grepl("UFP", pollutant)), aes(xintercept = Median), alpha=line_a, linetype=1, col=line_col) +
+  geom_vline(data=filter(visit_conc, !grepl("UFP", pollutant)), aes(xintercept = Q05), alpha=line_a, linetype=2, col=line_col) +
+    geom_vline(data=filter(visit_conc, !grepl("UFP", pollutant)), aes(xintercept = Q95), alpha=line_a, linetype=2, col=line_col) +
   
-  facet_wrap(~pollutant+ufp_range_nm, scales="free", nrow = 1) +
+  facet_wrap(~pollutant+ufp_range_nm, scales="free_x", nrow = 1) +
   scale_y_discrete(breaks = seq(10,310, 10)) +
   labs(y= "Site No.",
          x= "Value")  +
@@ -661,20 +787,21 @@ location_quant %>%
 ggsave(file = file.path(image_path, "SI", "visit_boxplots_non_ufp.png"),
          height = 9, width = 7)
 
-Print("...Note that differnt UFP measures are on different x-axis scales for improved visibility.")
+print("...Note that differnt UFP measures are on different x-axis scales for improved visibility.")
 
-#ufp plots
+#total ufp plots
 location_quant %>%
   filter(grepl("UFP", pollutant),
          #!grepl("50-1,000", ufp_range_nm)
          ) %>%
-  ggplot(aes(y=factor(location_no), col=ufp_range_nm)) +
+  ggplot(aes(y=factor(location_no), #col=ufp_range_nm
+             )) +
   geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
-  geom_vline(data=filter(visit_conc, grepl("UFP", pollutant)), aes(xintercept = Median), alpha=0.4, linetype=1) +
-  geom_vline(data=filter(visit_conc, grepl("UFP", pollutant)), aes(xintercept = Q05), alpha=0.4, linetype=2) +
-    geom_vline(data=filter(visit_conc, grepl("UFP", pollutant)), aes(xintercept = Q95), alpha=0.4, linetype=2) +
+  geom_vline(data=filter(visit_conc, grepl("UFP", pollutant)), aes(xintercept = Median), alpha=line_a, linetype=1, col=line_col) +
+  geom_vline(data=filter(visit_conc, grepl("UFP", pollutant)), aes(xintercept = Q05), alpha=line_a, linetype=2, col=line_col) +
+    geom_vline(data=filter(visit_conc, grepl("UFP", pollutant)), aes(xintercept = Q95), alpha=line_a, linetype=2, col=line_col) +
   
-  facet_wrap(~pollutant+ufp_range_nm, scales="free", 
+  facet_wrap(~pollutant+ufp_range_nm, #scales="free_x", 
              nrow = 1) +
   scale_y_discrete(breaks = seq(10, 310, 10)) +
   theme(legend.position = "none") + 
@@ -692,42 +819,40 @@ ggsave(file = file.path(image_path, "SI", "visit_boxplots_ufp.png"),
 
 
 
-```{r, fig.height=18, eval=F}
-#hard to see any patterns b/c site are not organized.
-#sample a few sites w/ low, medium and high variability
-loc_sample <- stops %>%
-  group_by(location) %>%
-  mutate(sd = sd(value)) %>%
-  ungroup() %>%
-  mutate(
-    sd_lvl = ifelse(sd >= quantile(sd, 0.66), "high",
-                      ifelse(sd < quantile(sd, 0.66) & sd >= quantile(sd, 0.33), "medium",
-                                                               "low")
-                      )
-    ) %>% 
-  #one row per site
-  distinct(location, sd_lvl) %>%
-  #take random sample from each SD level
-  group_by(sd_lvl) %>%
-  sample_n(10)  
-    
- stops %>%
-   #only keep sample of sites
-   right_join(loc_sample) %>%  
-   #calc stats for alternative boxplots
-  group_by(pollutant, ufp_range_nm, location) %>%
-  alt_boxplot(var = "value") %>%  
+```{r, eval=F}
+#- same as above for UFP bins 
 
-  ggplot(aes(y=factor(location), col=ufp_range_nm)) +
+#only show lines for one instrument at a time
+df <- visit_conc_bins %>%
+  filter(instrument == "NanoScan" & !variable %in% c("median", "mode")) 
+  
+location_quant_bins %>%
+  filter((instrument == "NanoScan" & !variable == "median")) %>%
+  
+  ggplot(aes(y=factor(location_no))) +
   geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
-   facet_wrap(~pollutant, scales="free") +
-    labs(y= "Site",
-         x= "Value"
-         )  
+  geom_vline(data=df, aes(xintercept = Median), alpha=line_a, linetype=1, col=line_col) +
+  geom_vline(data=df, aes(xintercept = Q05), alpha=line_a, linetype=2, col=line_col) +
+    geom_vline(data=df, aes(xintercept = Q95), alpha=line_a, linetype=2, col=line_col) +
+  
+  facet_wrap(~instrument+ufp_range_nm,  #+variable
+               #scales="free_x", 
+             nrow = 1) +
+  scale_y_discrete(breaks = seq(10, 310, 10)) +
+  theme(legend.position = "none") + 
+  labs(y= "Site No.",
+         x= "Value") + 
+  scale_x_continuous(guide = guide_axis(check.overlap = TRUE,))
+
+  
+   
+ggsave(file = file.path(image_path, "SI", "visit_boxplots_ns_bins.png"),
+         height = 9, width = 12)
 
 
 ```
 
+ 
 
 ## Temporal Variability 
 
@@ -739,7 +864,7 @@ notes
 
 * NanoScan (10-420 nm) has higher readings than discmini (10-700 nm) b/c it is more efficient at measuring the smallest particles due to the difference in technologies. The Nanoscan measures optical diameter after alcohol condensation to grow the particles, whereas the disk-mini measures electrical mobility diameter based on the current produced when the particles are captured on a oppositely charged surface.  The electrostatic method has lower detection efficiencies for these very small particles than does the condensation/optical method.
 
-by month 
+by season 
 
 
 ```{r, fig.height=12}
@@ -756,14 +881,14 @@ stops %>%
     alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>% 
     
     ggplot(aes(x=season, #x=month, 
-               col=ufp_range_nm)) +
+               fill=ufp_range_nm)) +
     geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
     stat_summary(aes(y=Q50, group=ufp_range_nm), fun="mean", geom="line", size=1) +
   facet_wrap(~pollutant, #~season
              scales="free", nrow = 3) +
     labs(y= "Value",
          x="Month",
-         col = "UFP Range (nm)"
+         fill = "UFP Range (nm)"
          )  
 
 ggsave(file = file.path(image_path, "SI", "temporal_season.png"),
@@ -771,28 +896,28 @@ ggsave(file = file.path(image_path, "SI", "temporal_season.png"),
 
 ```
 
+
+
 ```{r, eval=F}
-# # table
-# 
-# stops %>%
-#    mutate(
-#     pollutant2 = as.character(pollutant),
-#     pollutant2 = ifelse(grepl("UFP", pollutant2), paste0(pollutant2, "\n", ufp_range_nm), pollutant2)
-#          ) %>%
-#   group_by(pollutant2, pollutant, season) %>%
-#   summarize(
-#     median = median(value)
-#   ) %>%
-#   #spread(season, median)
-#   ggplot(aes(x=season, y=median, col=pollutant2, group=pollutant2,
-#              )) + 
-#   facet_wrap(~pollutant, scales = "free") +
-#   geom_point() +
-#   geom_line() + 
-#   labs(y = "Median Visit Conc")
+#-same as above for bins 
 
+stops_bins %>%
+  filter(!variable =="median") %>%
+    mutate(month =month(time, label = T)) %>%  
+    #calc stats for alternative boxplots
+    group_by(instrument, ufp_range_nm, season) %>%
+    alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>% 
+    
+    ggplot(aes(x=season, col=ufp_range_nm)) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
+    stat_summary(aes(y=Q50, group=ufp_range_nm), fun="mean", geom="line", size=1) +
+  facet_wrap(~instrument, 
+             scales="free") +
+    labs(y= "Value",
+         x="Month",
+         col = "UFP Range (nm)"
+         )  
 ```
-
 
 
 by weekday
@@ -809,14 +934,14 @@ stops %>%
   alt_boxplot(var = "value") %>%  
   
   ggplot(aes(x=dow, #x=day, 
-             col=ufp_range_nm)) +
+             fill=ufp_range_nm)) +
   geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
   stat_summary(aes(y=Q50, group=ufp_range_nm,), fun="mean", geom="line", size=1) +
   facet_wrap(~pollutant, scales="free", #space = "free_x"
              nrow = 3) +
   labs(y= "Value",
        x="Day",
-       col = "UFP Range (nm)"
+       fill = "UFP Range (nm)"
   )
 
 
@@ -834,7 +959,7 @@ stops %>%
     group_by(pollutant, ufp_range_nm, hour) %>%
     alt_boxplot(var = "value") %>%  
     
-    ggplot(aes(x=hour, col=ufp_range_nm)) +
+    ggplot(aes(x=hour, fill=ufp_range_nm)) +
     geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
      stat_summary(aes(y=Q50, group=ufp_range_nm,), fun="mean", geom="line",size=1) +
     
@@ -842,7 +967,7 @@ stops %>%
     
     labs(y= "Value",
          x= "Hour",
-         col = "UFP Range (nm)"
+         fill = "UFP Range (nm)"
          )  
 
 ggsave(file = file.path(image_path, "SI", "temporal_hour.png"),
@@ -858,10 +983,16 @@ spaghetti plots
 stops %>%
     ggplot(aes(x=time, y=value)) +
    #stat_summary( fun.y=mean, geom="line", size=0.1, alpha=0.3) +
-    geom_line(stat="smooth",
-              size=0.1, alpha=0.8, 
-              aes(col=ufp_range_nm,group=location), show.legend = F
+  
+      geom_smooth( se=F,
+              size=0.1, alpha=0.8,
+              aes(col=ufp_range_nm, group=location), show.legend = F
               ) +
+  
+    # geom_line(stat="smooth",
+    #           size=0.1, alpha=0.8,
+    #           aes(col=ufp_range_nm,group=location), show.legend = F
+    #           ) +
   #overall trend
   geom_smooth(se=F, col="black"
               ) +
@@ -906,11 +1037,12 @@ for(i in seq_along(unique_pollutants2)) {
 
 var_df %>%
   mutate(DF = ifelse(Variable %in% c("total", "error"), "-", DF)) %>%
+  rename('Degrees of Freedom' = DF) %>%
   mutate_if(is.numeric, ~round(., 1)) %>%
   slice(-1) %>%  
   column_to_rownames(var = "Variable") %>%  
   t() %>%
-  kable(caption = "Percent of variability in visit concentrations explained by spatial and temporal factors (out of 100%). Values are based on separate Analysis of Variance (ANOVA) models for each pollutant. Total and error degrees of freedom (DF) vary by pollutant.", 
+  kable(caption = "Percent of variability in visit concentrations explained by spatial and temporal factors (out of 100%). Values are based on separate Analysis of Variance (ANOVA) models for each pollutant. The error term degrees of freedom varies by pollutant.", 
         digits = 1) %>%
   kable_styling()
 
@@ -945,7 +1077,7 @@ anovaVCA(value ~ location + day+ hour + season + ufp_range_nm,
 ```
 
 
-```{r}
+```{r, eval=F}
 
 lm_ufp <- stops %>%
   filter(grepl("UFP", pollutant)) %>%
@@ -959,84 +1091,6 @@ lm_ufp %>%
   kable(caption = "LM fit, excluding location terms (modeled as factors). Reference is: Friday, spring, NanoScan") %>%
   kable_styling()
    
-  
-  
-```
-
-
-
-
-# Raw data
-
-* note that ~ 24k rows of data are removed for plots on log10 x axes b/c values <=0 
-
-```{r,  fig.height=10}
-# sec %>%
-#   ggplot(aes(x=value, col=location)) + 
-#   facet_wrap(~pollutant+ufp_range_nm, scales="free") + 
-#   #use this instead of geom_density b/c can change line transparancy
-#   geom_line(stat="density", alpha=0.2) +
-#   scale_x_log10() +
-#   guides(col = F) 
-
-```
-
-
-boxplots with whiskers at 5 and 95
-
-```{r, fig.height=10, eval=F}
-# print("Distribution of raw second readings for a set of example sites (same as above)")
-# 
-# sec %>%
-#   variable_relabel(var = "variable") %>%
-#   
-#  #only keep sample of sites
-#  right_join(loc_sample) %>% 
-#   
-#   #calc stats for alternative boxplots
-#   group_by(variable, location) %>%
-#   alt_boxplot(var = "value") %>%   
-#   
-#   ggplot(aes(y=location)) +
-#   geom_boxplot(aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax), stat = "identity") +
-#   facet_wrap(~variable, scales="free") +
-#   
-#   labs(y="Location",
-#        x="Value"
-#        )
- 
-
-
-```
-
-
-```{r}
-# ## --> ? what to do with this? 
-# 
-# #IQR table 
-# 
-# sec %>%
-#   #calc stats for alternative boxplots
-#   group_by(pollutant, ufp_range_nm, location) %>%
-#   summarize(
-#     IQR = IQR(value)
-#   ) %>%  #View()
-#   summarize(
-#     Min = min(IQR),
-#     Median = median(IQR),
-#     Max = max(IQR)
-#   ) %>%
-#   mutate_if(is.numeric, 
-#             #if values have decimal values, only show 3 sigfigs, though not necessarily in scientific notation
-#             ~format(., digits = 3, #scientific = T,
-#                     ) 
-  #           #~ signif(., 3) #~ as.character( signif(., 3) )
-  #           ) %>%
-  # kable(caption = "Distribution of IQR values for the second data", 
-  #       
-  #       #digits=2
-  #       ) %>%
-  # kable_styling()
   
   
 ```
@@ -1062,7 +1116,15 @@ annual <- stops %>%
   #add location lat/long
   left_join(locations)
 
-
+annual_bins <- stops_bins %>%
+  group_by(variable, pollutant, instrument, ufp_range_nm, location, location_no) %>%
+  summarize(value = mean(value)) %>%
+  ungroup() %>%
+  mutate(
+    pollutant2 = ifelse(grepl("UFP", pollutant), paste0(pollutant, ", ", ufp_range_nm), as.character(pollutant ))
+  ) %>%
+  #add location lat/long
+  left_join(locations)
 ```
 
 
@@ -1108,71 +1170,102 @@ annual_conc %>%
   
 ```
 
-**these are traditional boxplots (hence why you see outliers)**
-
-```{r, fig.height=10, eval=F}
-
-#ERROR: 2nd axis does not work w/ ggarrange well
-
-p <- list()
-
-for (i in seq_along(unique_pollutants)) {
-  #i=3
-  
-  min_val <- annual %>%
-    filter(pollutant == unique_pollutants[i]) %>%
-    summarize(min_val = min(value))  %>%
-    pull()
-  
-  p[[i]] <- annual %>%
-    filter(pollutant == unique_pollutants[i]) %>%
-    ggplot(data=., aes(x=pollutant, y=value, col=ufp_range_nm)) + 
-    facet_wrap(~pollutant, scales= "free") + 
-    geom_boxplot() +
-    scale_y_continuous(sec.axis = sec_axis(trans = ~./min_val,
-                                           name = 'Relative to Min Value'),
-                       labels = function(b) {round(b, 1)}
-                       
-                       ) +
-    
-    labs(x="",
-         y = "",
-         col = "UFP Range (nm)"
-    )
-  
-  if(!grepl("UFP", unique_pollutants[i])) {
-    p[[i]] <- p[[i]] + theme(legend.position = "none")
-  }
-  
-  p[[i]]
-  
-}
-
-
-ggarrange(plotlist =  p, ncol = 2, nrow = 3 #, 
-          #common.legend = T, #common.legend = c(3)
-           )
-
-```
-
-
+ 
 ```{r}
 print("Annual average site concentrations")
   
 #boxplots
 annual %>%
-  ggplot(aes(x=pollutant, y=value, col=ufp_range_nm)) + 
+  ggplot(aes(x=pollutant, y=value, fill=ufp_range_nm)) + 
   facet_wrap(~pollutant, scales= "free") + 
   geom_boxplot() +
   labs(x="Pollutant",
        y = "Value",
-       col = "UFP Range (nm)"
+       fill = "UFP Range (nm)"
        )
 
-  
-ggsave(file.path(image_path, "annual_avg.png"), height = 6, width = 7)
+ggsave(file.path(image_path, "SI", "annual_avg.png"), height = 6, width = 7)
 
 ```
+
+- upf bins
+
+```{r}
+print("Annual average bin-specific UFP site concentrations. N = 309 sites.")
+
+max_val <- max(annual_bins$value)
+
+p <- list()
+
+for(i in seq_along(bin_instruments)) {
+  #i=1
+p[[i]] <- annual_bins %>%
+    filter(variable != "median",
+           instrument == bin_instruments[i]
+           ) %>%
+  ggplot(aes(x=instrument, y=value, col=ufp_range_nm)) + 
+  geom_boxplot() +
+  ylim(0, max_val) +
+  labs(x="Instrument",
+       y = "Value",
+       col = "UFP\nRange\n(nm)"
+       )
+  
+}
+
+ggarrange(plotlist = p, align = "h")
+
+
+
+# #boxplots 
+# annual_bins %>%
+#   filter(variable != "median") %>%
+# ggplot(aes(x=instrument, y=value, col=ufp_range_nm)) + 
+#   geom_boxplot() +
+#   labs(x="Instrument",
+#        y = "Value",
+#        col = "UFP Range (nm)"
+#        )
+
+ggsave(file.path(image_path, "SI", "annual_avg_bin.png"), height = 6, width = 7)
+
+```
+
+```{r}
+
+# barplots of site totals 
+
+p <- list()
+
+for(i in seq_along(bin_instruments)) {
+  #i=1
+  
+  p[[i]] <- annual_bins %>%
+    filter(variable != "median",
+           instrument == bin_instruments[i]
+           ) %>%
+    ggplot(aes(y=location_no, x=value, fill=ufp_range_nm,)) + 
+    geom_bar(stat = "identity", orientation = "y",
+             position = position_stack(reverse = TRUE)
+             ) + 
+    facet_wrap(~instrument) + 
+    labs(
+      y = "Site No.",
+      x = "value",
+      fill = "UFP\nRange\n(nm)"
+    )
+  
+  p[[i]]
+
+  }
+
+ggarrange(plotlist = p, ncol=2, align = "h")
+
+ggsave(file.path(image_path, "SI", "site_annual_avg_bin.png"), height = 9, width = 13)
+
+```
+
+
 
 -temp, rh annual average for the study area 
 
@@ -1234,7 +1327,7 @@ trh0 %>%
 ```
 
 
-```{r}
+```{r, eval=F}
 ## Variograms (spatial variability)
 
 ### --> move NO2
@@ -1243,9 +1336,11 @@ trh0 %>%
 
 ### --> "note that this is before we’ve removed important predictors of pollution"
 
-```
- 
-```{r, eval=F}
+
+
+
+
+
 # source: https://github.com/liannesheppard/ENVH556_2021course/blob/main/Week8LabGeostatistics.Rmd
 
 annual_sf <- st_as_sf(annual, coords=c('longitude','latitude'), crs=crs_deg) %>%
@@ -1431,81 +1526,7 @@ ggsave(file.path(image_path, "map_non_ufp.png"),  height = 13, width = 11)
   * note, people wouldn't normally use screened PTRAKS (50-1,000 nm particles) to measure "UFPs"
 
   
-```{r, fig.height=18}
-#UFPs. these share the same legend
-
-p <- list() 
-
-ufp2 <- str_subset(unique(annual$pollutant2), "UFP" ) %>% sort()
-
-for(i in seq_along(ufp2)) {
-   #i=1
-   
-  p[[i]] <- ggmap(ggmap = map0, darken = c(.5, "white")) +
-    #monitoring area
-    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
-            alpha=0.1,
-            #reduce/eliminate outline
-            lwd = 0.1,
-            ) +
-    
-    #annual averages
-    geom_point(data=filter(annual,
-                           pollutant2 == ufp2[i]
-                           ),
-             aes(x=longitude, y=latitude, col=value), 
-             inherit.aes = F, size=2)  +
-    scale_color_gradient(name = "Conc",
-                        low = "yellow", high = "red",
-                        ) +
-    facet_wrap(~pollutant+ufp_range_nm)  + 
-    # add scale & N arrow to top rught
-    annotation_scale(location = "tr") +
-    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
-
-    annotation_north_arrow(location = "tr",
-                           #point towards North Pole
-                           which_north = "true",
-                           pad_y = unit(0.5, "in"),
-                           style = north_arrow_fancy_orienteering
-                           ) +
-  theme_bw() +
-  theme(
-    legend.justification=c(0,1),  
-    legend.position=c(0,1),  
-    legend.background =  element_blank()
-    ) +
-    coord_sf(expand = F) +
-    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
-    scale_y_continuous(breaks = map_y_labels, 
-                       #labels = map_y_labels
-                       labels = format(map_y_labels,digits = 1,
-                                       nsmall = 1
-                                       )
-                       ) +
-    #arrange legend order
-  guides(col = guide_colorbar(order = 2),
-              fill = guide_legend(order = 1)
-         ) +
-  labs(x = "Longitude",
-       y = "Latitude",
-       fill = ""
-       ) 
   
-  p[[i]]
-  
-  }
-
-ggarrange(plotlist = p, ncol = 3, nrow = 2)
-
-
-ggsave(file.path(image_path, "map_ufp.png"),  height = 13, width = 11)
-
-```
-
-
-same as above but for SI - same legend
-
 ```{r, fig.height=18}
 #UFPs. these share the same legend
 
@@ -1525,7 +1546,7 @@ ggmap(ggmap = map0, darken = c(.5, "white")) +
   scale_color_gradient(name = "Conc",
                        low = "yellow", high = "red",
                        ) +
-    facet_wrap(~pollutant+ufp_range_nm, nrow = 2)  + 
+    facet_wrap(~pollutant +ufp_range_nm, nrow = 2)  + 
     # add scale & N arrow to top rught
     annotation_scale(location = "tr") +
     annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
@@ -1555,8 +1576,83 @@ ggmap(ggmap = map0, darken = c(.5, "white")) +
        fill = ""
        ) 
 
+ggsave(file.path(image_path, "map_ufp.png"),  height = 13, width = 11)
 
-ggsave(file.path(image_path, "SI", "map_ufp_same_legend.png"),  height = 13, width = 11)
+```
+
+
+by UFP bin size
+
+
+```{r, eval=F}
+# - nanoscan # produces too many  maps
+
+p <- list() 
+
+for(i in seq_along(ns_bin_range)) {
+   #i=1
+   
+  p[[i]] <- ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
+            alpha=0.1,
+            #reduce/eliminate outline
+            lwd = 0.1, 
+            show.legend = F
+            ) +
+    
+    #annual averages
+    geom_point(data=filter(annual_bins,
+                           ufp_range_nm == ns_bin_range[i]
+                           ),
+             aes(x=longitude, y=latitude, col=value), 
+             inherit.aes = F, size=2)  +
+    scale_color_gradient(name = "Conc",
+                        low = "yellow", high = "red",
+                        ) +
+    facet_wrap(~ufp_range_nm)  + 
+    # # add scale & N arrow to top rught
+    # annotation_scale(location = "tr") +
+    # annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+    # 
+    # annotation_north_arrow(location = "tr",
+    #                        #point towards North Pole
+    #                        which_north = "true",
+    #                        pad_y = unit(0.5, "in"),
+    #                        style = north_arrow_fancy_orienteering
+    #                        ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank()
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1,
+                                       nsmall = 1
+                                       )
+                       ) +
+    #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 1)
+         ) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = ""
+       ) 
+  
+  p[[i]]
+  
+  }
+
+ggarrange(plotlist = p#, #ncol = 3, nrow = 2
+          )
+
+
+#ggsave(file.path(image_path, "map_ufp_bin_ns.png"),  height = 13, width = 11)
+
 
 ```
 
@@ -1564,9 +1660,10 @@ ggsave(file.path(image_path, "SI", "map_ufp_same_legend.png"),  height = 13, wid
 
 
 
+
 "total pollution map" 
 
-* using NanoScan UFP measures (10-420 nm)  s
+* using NanoScan UFP measures (10-420 nm) 
 
  
 $$
@@ -1575,8 +1672,6 @@ $$
 
 Where $n$ is each individual pollutant, and $j$ is each individual pollutant measurement
 
-
-### --> change shape; make lightest color lowest conc, not avg conc
 
 ```{r}
   
@@ -1654,6 +1749,83 @@ ggsave(file.path(image_path, "map_total_ap.png"),  height = 13, width = 11)
 ```
 
 
+```{r, eval=F}
+# we expect that smaller bin sizes will generally have higher particle counts (see boxplots above). What we want to know is whether there are places with higher/lower than average concentrations of specific UFP bin sizes. These relatively elevated levels may be related to specific sources (e.g., airport, rail yard). We will thus also scale UFP bin counts like we did above with the multipollutant map.
+# 
+# * map shows that the UFP concentrations and particle size compositions differ at different locations  
+
+total_ufp_pollution <- annual_bins %>%
+  filter(ufp_range_nm %in% ns_bin_range) %>%
+  group_by(ufp_range_nm #variable
+           ) %>%
+  #standardize pollutant values
+  mutate(value = scale(value)) %>% #View()
+  # calculate "total" UFP at any given site. 
+  group_by(location, site, longitude, latitude) %>%
+  summarize(
+    max_p = unique(ufp_range_nm)[value==max(value)],
+    value = sum(value)
+    )
+  
+
+# map
+
+print("Total scaled UFP based on bin-specific standardized values ([x-mean]/SD) from the NanoScan.")
+
+ggmap(ggmap = map0, darken = c(.5, "white")) +
+  #monitoring area
+  geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(
+    fill = "Monitoring Area"), 
+    alpha=0.1, lwd = 0.1) +
+  #annual averages
+  geom_point(data=total_ufp_pollution, aes(x=longitude, y=latitude, 
+                                       col=value,  
+                                       shape=max_p), 
+           inherit.aes = F, size=4)  +
+  
+  #scale_shape_manual(values=c(15, 16, 17, 18, 10)) +
+  
+  scale_shape_manual(values=c(1:length(ns_bin_range))) +
+  scale_color_gradient2(name = "Total Scaled\nUFP",
+                        high = "red", low = "blue", #mid = "yellow",
+                        ) +
+    # add scale & N arrow to top rught
+  annotation_scale(location = "tr", unit_category ="metric") +
+  annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank(),
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1, nsmall = 1)
+                       ) +
+  #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 3),
+         shape = guide_legend(order = 1)
+         ) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = "",
+       shape = "Leading Size (nm)"
+       ) 
+
+
+ggsave(file.path(image_path, "map_ufp_bin.png"),  height = 13, width = 11)
+
+```
+
+
 
 ## Lasso
 
@@ -1720,12 +1892,14 @@ split_cov_name <- function(dt, cov) {
   dt <- suppressWarnings(dt %>%
                            rename(cov_full_name = cov) %>%
                            mutate(
-                             buffer = substr(cov_full_name, nchar(cov_full_name)-4, nchar(cov_full_name)),
-                             buffer = as.numeric(ifelse(!is.na(as.integer(buffer)), buffer, NA)),
-                             cov = ifelse(is.na(buffer), cov_full_name, substr(cov_full_name, 1, nchar(cov_full_name)-5) )
+                             Buffer = substr(cov_full_name, nchar(cov_full_name)-4, nchar(cov_full_name)),
+                             #for non-buffered covariates, use "0"
+                             Buffer = as.numeric(ifelse(!is.na(as.integer(Buffer)), Buffer, 0)),
+                             #drop buffer repetition
+                             cov = ifelse(Buffer==0, cov_full_name, substr(cov_full_name, 1, nchar(cov_full_name)-5) )
                            )
   ) %>%
-    select(contains("cov"), buffer, everything())
+    select(contains("cov"), Buffer, everything())
   
     # elevation
     dt$cov[grepl("^elev_.+_above$", dt$cov_full_name)] <- "elev_above"
@@ -1733,8 +1907,8 @@ split_cov_name <- function(dt, cov) {
     dt$cov[grepl("^elev_.+_stdev$", dt$cov_full_name)] <- "elev_stdev"
     dt$cov[grepl("^elev_.+_at_elev$", dt$cov_full_name)] <- "elev_at_elev"
     
-    dt$buffer[grepl("_1k_", dt$cov_full_name)] <- 1000
-    dt$buffer[grepl("_5k_", dt$cov_full_name)] <- 5000
+    dt$Buffer[grepl("_1k_", dt$cov_full_name)] <- 1000
+    dt$Buffer[grepl("_5k_", dt$cov_full_name)] <- 5000
     
   return(dt)
 }
@@ -1757,9 +1931,13 @@ geo_t %>%
 
 
 ```{r}
-annual_geo <- left_join(annual, geo, by=c("location" = "native_id"))
-# modeling covariates
 cov_names <- str_subset(names(geo), "site_id|native_id|lambert|latitude|longitude|pop_|pop90_", T)
+
+annual_geo <- left_join(annual, geo, by=c("location" = "native_id"))
+
+## for bins
+annual_bins_geo <- left_join(annual_bins, geo, by=c("location" = "native_id")) %>%
+  filter(variable != "median")
 
 # run lasso for each pollutant
 lms <- annual_geo %>%
@@ -1771,33 +1949,53 @@ lms <- annual_geo %>%
   unnest(lm) %>% unnest(lm) %>%
   select(-c(data)) %>%
   rename(lambda = lm) %>%
-  split_cov_name(cov = "cov") # %>%
-#   #only keep top predictors
-#   arrange(desc(abs(coef))) %>%
-#   slice(1:10) 
- 
+  split_cov_name(cov = "cov") %>%
+  # ? NAs ?
+  drop_na(coef)
+
 ```
 
-```{r, fig.height=10}
+### --> why are some lms empty for some bins???
 
+```{r}
+## for bins
+lms_bins0 <- annual_bins_geo %>%
+  group_by(Instrument = instrument, ufp_range_nm) %>%
+  nest() %>%
+  mutate(
+    lm = map(data, ~lasso_fn(dt = .x, x_names = cov_names, y_name = "value")),
+  ) %>% 
+  unnest(lm) %>% unnest(lm) %>%
+  select(-c(data)) %>%
+  rename(lambda = lm) %>%
+  split_cov_name(cov = "cov") %>%
+  # ? NAs ?
+  drop_na(coef)
+ 
+lms_bins <- lms_bins0 %>%
+  mutate(ufp_range_nm = factor(ufp_range_nm, levels = c(ns_bin_range, ptrak_bin_range))) 
+
+```
+
+
+ 
+
+
+
+
+```{r, fig.height=10}
+# all pollutants
 my.alpha <- 0.8 
 
 print("Lasso regression coefficient estimates for Annual Average pollutant Concentrations. Empty circles represent buffered covariates, while dots represent other covariates such as proximity.")
 
 lms %>%
-    #buffered covariates
-  drop_na(buffer) %>%
   ggplot(aes(x = coef, y = cov, col=ufp_range_nm)) +
-  geom_point(aes(size=buffer),
+  geom_point(aes(size=Buffer),
              shape=1,
              alpha=my.alpha) +
-  #non-buffered covariates
-  geom_point(data = lms[is.na(lms$buffer),],
-           alpha=my.alpha,
-           aes(shape="")) +
   geom_vline(xintercept=0, linetype=2, alpha=my.alpha) +
-    facet_wrap(~pollutant, labeller = "label_both",
-               #nrow = 1, 
+    facet_wrap(~pollutant, #labeller = "label_both", 
                scales = "free") +
   labs(y = "Geocovariate",
        x = "Coefficient Estimate",
@@ -1806,12 +2004,238 @@ lms %>%
        ) +
   theme(legend.position = "bottom")
 
+
 ggsave(file.path(image_path, "SI", "lasso.png"), height = 11, width = 12)
 
 ```
 
+### --> "237.1-316.2" bin is missing. Is it b/c only 223 sites have annual average for these bins? The largest bin has 281. All other bins have 309 sites. 
+
+```{r, fig.height=10, eval=F}
+
+lms_bins %>%
+  ggplot(aes(x = coef, y = cov, col=ufp_range_nm)) +
+  geom_point(aes(size=Buffer, #shape=Instrument
+                 ),
+             shape=1,
+             alpha=my.alpha) +
+  #scale_shape_manual(values=c(1,2)) +
+  #keep these on the same scales
+  facet_wrap(~Instrument) +
+  geom_vline(xintercept=0, linetype=2, alpha=my.alpha) +
+  labs(y = "Geocovariate",
+       x = "Coefficient Estimate",
+       col = "UFP\nSize\nRange (nm)"
+       ) +
+  theme(legend.position = "bottom") +
+  #make NS and PTRAK colors look different 
+  scale_color_manual(values= c(rainbow_hcl(12), rainbow_hcl(2)))
+
+ 
+ggsave(file.path(image_path, "SI", "lasso_bins0.png"), height = 11, width = 12)
+
+```
 
 
+### --> "237.1-316.2" bin is missing. Is it b/c only 223 sites have annual average for these bins? The largest bin has 281. All other bins have 309 sites. 
+
+### --> reduce # of bins when have 13th bin? 
+
+* alternative to abvoe    
+  * each bin has it's own scale since larger bins are associated with lower concentrations and so coefficient estimates are much smaller than those for smaller bins    
+  * easier to see the many NS bins  
+
+```{r}
+# each bin and instrument has its own facet
+
+for(i in seq_along(bin_instruments)) {
+#i=1
+  p <- lms_bins %>%
+    filter(Instrument == bin_instruments[i]) %>%
+    ggplot(aes(x = coef, y = cov, col=ufp_range_nm)) +
+    # don't need to show color legend
+    scale_color_discrete(guide = FALSE) +
+    
+    geom_point(aes(size=Buffer),
+             shape=1,
+             alpha=my.alpha) +
+    facet_wrap(~ufp_range_nm, scales = "free") +
+    geom_vline(xintercept=0, linetype=2, alpha=my.alpha) +
+    labs(y = "Geocovariate",
+         x = "Coefficient Estimate",
+         col = "UFP\nSize\nRange (nm)"
+         ) +
+    theme(legend.position = "bottom")  
+
+  print(p)
+  
+  ggsave(file.path(image_path, "SI", paste0("lasso_bin_",bin_instruments[i], ".png")), height = 13, width = 13)
+  
+}
+
+
+```
+
+## UFPs by bin 
+
+- crude Nanoscan bin size
+
+```{r}
+# # calculate UFP percentiles after binning, based on lasso results
+# annual_bins %>% 
+#   distinct(variable, ufp_range_nm)
+
+ufp_bin_pctl <-annual_bins %>%
+  filter(!variable %in% c("median", "pnc_20_50", "pnc_screen")) %>%
+  mutate(variable = as.numeric(as.character(variable)),
+         var_bin = ifelse(variable <= 48.7, "10-56.2",
+                          ifelse(variable > 48.7 & variable <115.5, "56.2-100",
+         # var_bin = ifelse(variable <= 36.5, "10-42.2",
+         #                  ifelse(variable > 36.5 & variable <115.5, "42.2-100",
+                                 ifelse(variable >= 115.5 & variable <=365.2, "100-421.7", NA
+                                        ))),
+         var_bin = factor(var_bin, levels = unique(var_bin))
+         ) %>%
+  group_by(var_bin) %>%
+  mutate(
+    value_percentile = fmsb::percentile(value),
+    value_normalized = scale(value)
+  )
+  
+
+print("UFP percentiles by particle size range. Based on binned NanoScan concentrations.")
+
+# ns_bin2 <- unique(ufp_bin_pctl$var_bin)
+# 
+# p <- list()
+# 
+# for (i in seq_along(ns_bin2)) {
+#   #i=1
+  
+  #p[[i]] <- 
+    p1 <- ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
+            alpha=0.1,
+            #reduce/eliminate outline
+            lwd = 0.1,
+            ) +
+    
+    #annual averages
+    geom_point(data=filter(ufp_bin_pctl, 
+                           #var_bin == ns_bin2[i]
+                           ),
+             aes(x=longitude, y=latitude, col = value #col=value_percentile
+                 ), 
+             inherit.aes = F, size=2)  +
+  scale_color_gradient(name = "Conc",
+                       low = "yellow", high = "red",
+                       ) +
+    facet_wrap(~instrument+var_bin)  + 
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank(),
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1, nsmall = 1)
+                       ) +
+  #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 1)) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = ""
+       ) 
+
+#  p[[i]] 
+# }
+# 
+# ggarrange(plotlist = p)
+
+
+#ggsave(file.path(image_path, "map_ufp_nanoscan.png"),  height = 8, width = 12)
+
+
+```
+
+-- ptrak bins
+
+```{r}
+
+p2 <- ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
+            alpha=0.1,
+            #reduce/eliminate outline
+            lwd = 0.1, 
+            show.legend = F
+            ) +
+    
+    #annual averages
+    geom_point(data=filter(annual_bins,
+                           ufp_range_nm %in% ptrak_bin_range),
+             aes(x=longitude, y=latitude, col=value), 
+             inherit.aes = F, size=2)  +
+    scale_color_gradient(name = "Conc",
+                        low = "yellow", high = "red",
+                        ) +
+    facet_wrap(~instrument+ufp_range_nm)  + 
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank()
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1,
+                                       nsmall = 1
+                                       )
+                       ) +
+    #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 1)
+         ) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = ""
+       ) 
+  
+#ggsave(file.path(image_path, "map_ufp_bin_ptrak.png"),  height = 6, width = 7)
+
+```
+
+```{r}
+ggarrange(p1, p2, nrow = 2) 
+
+ggsave(file.path(image_path, "map_ufp_bins.png"),  height = 13, width = 9)
+
+```
 
 
 
@@ -1887,73 +2311,9 @@ cor(cor_df) %>% as.data.frame() %>%
   kable(caption = "Range of pearson correlations", digits = 2) %>%
   kable_styling()
 
-min(cor(cor_df))
-
 ```
 
 
- 
-
-# Discussion
-
-## Other BC & UFP studies
-
-### --> Change our results if use this
-
-```{r}
-
-
-
-ufp0 <- readxl::read_xlsx(file.path("~/Documents/School/PhD/Dissertation/References", "Mean UFP & BC comparison.xlsx")) %>%
-  #only include studies that have been fully entered into excel or qualify
-  filter(Include_in_analysis == TRUE) %>%
-  select(-Include_in_analysis) %>%
-  #use median if mean is missing
-  mutate(Mean = ifelse(is.na(Mean), yes = Median, no = Mean),
-         Location = gsub("Amsterdam", "AMS", Location),
-         Location = gsub("Utrecht", "UT", Location),
-         Location = gsub("Maastricht", "MMa", Location),
-         Location = gsub("Rotterdam", "RTM", Location),
-
-         This_study = grepl("Blanco", Study),
-         
-         Year = as.numeric(str_extract(Study, "[0-9]{4}")),
-         
-         Sampling_type = ifelse(grepl("continuous", Sampling_type, ignore.case = T), "Continuous Fixed Site", ifelse(grepl("mobile", Sampling_type, ignore.case = T), "Mobile - No Stops", "Mobile - Stops" ))
-
-         
-         ) %>%
-  #remove white spaces from start & end of strings
-  mutate_if(is.character, ~str_trim(.))
-
-ours <- ufp0 %>%
-  filter(grepl("Blanco", Study))
-
-
-## bc
-bc0 <- readxl::read_xlsx(file.path("~/Documents/School/PhD/Dissertation/References", "Mean UFP & BC comparison.xlsx"), sheet=2) %>%
-  #only include studies that have been fully entered into excel or qualify
-  filter(Include_in_analysis == TRUE) %>%
-  select(-Include_in_analysis) %>%
-  mutate(
-         Location = gsub("Amsterdam", "AMS", Location),
-         Location = gsub("Utrecht", "UT", Location),
-         Location = gsub("Maastricht", "MMa", Location),
-         Location = gsub("Rotterdam", "RTM", Location),
-         
-         This_study = grepl("Blanco", Study),
-         
-         Sampling_type = ifelse(grepl("continuous", Sampling_type, ignore.case = T), "Continuous Fixed Site", ifelse(grepl("mobile", Sampling_type, ignore.case = T), "Mobile - No Stops", "Mobile - Stops" ))
-
-         
-         ) %>%
-  rename(Mean = Mean_Median) %>%
-  #remove white spaces from start & end of strings
-  mutate_if(is.character, ~str_trim(.))
-
-bc_ours <- bc0 %>%
-  filter(grepl("Blanco", Study))
-```
 
 
 # Session Info

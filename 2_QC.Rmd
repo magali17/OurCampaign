@@ -158,7 +158,12 @@ gitcreds::gitcreds_set() # select '2' and enter new token
 * not including CO, which as excluded from this analysis as a whole, about 9% of the stop data were dropped based on the QC procedures outlined above. 
 
 
-
+* Temp & relative humidity      
+  * all 2-min median readings were within the instrument range    
+  * compared collocated instruments - they looked good    
+  * only kep readings from the primary instrument       
+  * later use these to calculate annual average values for each site and the entire study area      
+  * could think about comparing these to those from collocated AQS sites in the future    
 
 
 
@@ -197,7 +202,8 @@ pacman::p_load(knitr, kableExtra,
 
 set.seed(1)
 
-theme_set(theme(legend.position = "bottom"))
+theme_set(theme_bw())
+theme_update(legend.position = "bottom")
 
 image_path <- file.path("..", "Manuscript", "Images")
 
@@ -1697,7 +1703,7 @@ full_join(s0, s1) %>%
   kable(caption = "Mobile monitoring samples", 
         digits = 2, 
         col.names = c("Pollutant", "Original Samples", "Final Samples", "Samples Dropped", "Percent Samples Dropped"), 
-        format.args = list(big.mark=', ')
+        format.args = list(big.mark=',')
         ) %>%
   kable_styling()
 
@@ -1882,7 +1888,7 @@ trh_stops %>%
   left_join(instrument_range_trh) %>%  
   mutate(below_min = value < Min,
          above_max = value > Max
-         ) %>% View()
+         ) %>% #View()
   group_by(variable) %>%
   summarize(
     n_original = unique(n_original),
@@ -2298,7 +2304,7 @@ print("Instrument Collocations")
 ggarrange(plotlist = p, ncol = 3, nrow = 4)  
 
 
-ggsave(file.path(image_path, "SI", "collocations.png"), height=14, width = 10) 
+ggsave(file.path(image_path, "SI", "collocations.png"), height=10, width = 10) 
 
 ```
 
@@ -2746,8 +2752,11 @@ ns_stops3 <- ns_stops2 %>%
   mutate(
     value = ifelse(grepl("PMSCAN_3", instrument_id) & date < drop_ns3_v2, 
                    (value_c1-int)/slope,
-                   value_c1)
-    )
+                   value_c1),
+    # ? no calib curves for a few days ?? use non-calibrated values in this case. the adjustment is small either way.
+    value = ifelse(is.na(value), value_c1, value)
+    ) %>%
+  select(-c(int, slope))
 
 ```
 
@@ -3531,7 +3540,7 @@ saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rd
 
 ## Save data 
 
-```{r, eval=F}
+```{r, }
 # median stop data 
 ## units: nephs read bscatx10^-4 (similar to DOE). 
 saveRDS(final_data, file.path("Data", "Output", "stop_data.rda"))

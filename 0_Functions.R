@@ -316,12 +316,11 @@ variable_relabel <- function(dt, var = "variable"#, add_instrument=F
                           "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm  
                           "pnc_20_50" = "UFP (pt/cm3)", #, 20-50 nm  
       ),
-      var = factor(var, levels = c("Neph (bscat/m)",  "PM2.5 (ug/m3)",
+      var = factor(var, levels = c("UFP (pt/cm3)", 
                                    "BC (ng/m3)", 
-                                   "UFP (pt/cm3)", 
+                                   "Neph (bscat/m)",  "PM2.5 (ug/m3)",
                                    "NO2 (ppb)",
                                    "CO2 (ppm)", 
-                                   
                                    "CO (ppm)"
                                    )
                    )

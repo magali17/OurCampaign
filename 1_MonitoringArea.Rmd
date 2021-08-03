@@ -36,11 +36,16 @@ pacman::p_load(knitr, kableExtra,
                # for kaya - mapping
                ggmap, sf, #mapping
                ggspatial, #mapping, adding scales, N arrows...
+               spData, # us_states data - mapping WA state
+               cowplot, #layering ggplots. ggdraw(), draw_plot()
                units #convert between e.g., m to km
                )    
  
 
 set.seed(1)
+
+theme_set(theme_bw())
+theme_update(legend.position = "bottom")
 
 ```
 
@@ -52,6 +57,33 @@ set.seed(1)
 
 
 ```{r}
+
+  
+
+  
+ 
+# # TEST
+# map0 + 
+#   #geom_sf(data=test, inherit.aes = F) +
+# #new monitoring region
+#   geom_sf(data=monitoring_area_shp2, #routes_shp2,
+#         #aes(col = Route), 
+#         inherit.aes = F, 
+#         lwd = 0.3, alpha = 0.3, #alpha=0.7
+#         ) + 
+# # lines
+#   geom_sf(data=routes_shp,
+#         aes(col = Route
+#             ),
+#         inherit.aes = F,
+#         alpha=0.7
+#         ) 
+  
+
+```
+
+
+```{r}
 gis_path0 <- file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles") 
 gis_path <- file.path("..",  "GIS", "Shapefiles") 
 data_path <- file.path("~", "Documents", "School", "PhD", "Dissertation", "TRAP R Project", "Data")
@@ -59,7 +91,9 @@ data_path <- file.path("~", "Documents", "School", "PhD", "Dissertation", "TRAP 
 project_crs <- 4326  #lat/long
 m_crs <- 32148 #meters
 
+```
 
+```{r}
 #point locations
 
 act0 <- readRDS(file = file.path(data_path, "Aim 2", "Geocovariates", "cov_act_preprocessed.rda"))
@@ -80,7 +114,6 @@ mm <- readRDS(file.path(data_path, "Aim 2", "Geocovariates", "cov_mm_preprocesse
                   )
   ) %>%
   left_join(route_num)
-
 
 
 drop_parameters <- c("Temperature", "Wind", "Pressure", "Relative Humidity", "Sample Flow", "Sample Volume")
@@ -116,16 +149,13 @@ aqs_all <- aqs_all0  %>%
 #aqs sites included in study
 aqs <- readRDS(file = file.path(data_path, "Aim 2", "Geocovariates", "cov_agency_preprocessed.rda"))
 
+```
 
-# monitoring, study, area shapefiles
-monitoring_area_shp <- read_sf(file.path(gis_path, "Monitoring", "monitoring_area_filled_in.shp")) %>%
-  st_transform(project_crs)
+```{r}
 
 study_area_shp <- read_sf(file.path(gis_path0, "Study area", "oval_around_monitoring_area.shp")) %>%
   st_transform(project_crs)
 
-# water_shp <- read_sf(file.path(gis_path, "Other features", "Water", "DNR_Hydrography__Water_Bodies", "DNR_Hydrography__Water_Bodies.shp")) %>%
-#   st_transform(project_crs)
 
 routes_shp <- read_sf(file.path(gis_path0, "Routes 190910", "All routes.shp")) %>%
   st_transform(project_crs) %>%
@@ -133,13 +163,92 @@ routes_shp <- read_sf(file.path(gis_path0, "Routes 190910", "All routes.shp")) %
     Route = as.factor(Route)
   )
 
-# routes_shp <- routes_shp0 %>%
-#   group_by(Route) %>%
-#   st_combine(#by_feature=T
-#              ) %>%	
-#   st_cast('POLYGON') 
+# monitoring, study, area shapefiles
+monitoring_area_shp <- read_sf(file.path(gis_path, "Monitoring", "monitoring_area_filled_in.shp")) %>%
+  st_transform(project_crs)
+
+## make "monitoring area" slightly larger so that all driving routes also fall inside
+r7_north <- routes_shp %>%
+  filter(Route == 7) %>%
+  slice(3) %>%
+  st_transform(m_crs) %>%
+  st_buffer(1300) %>%
+  st_transform(project_crs)
+
+r6_south <- routes_shp %>%
+  filter(Route == 6) %>%
+  slice(4) %>%
+  st_transform(m_crs) %>%
+  st_buffer(1500) %>%
+  st_transform(project_crs) #%>% st_union() 
+
+monitoring_area_shp2 <- routes_shp %>%
+  filter(Route %in% c(9, 8)) %>%
+  st_transform(m_crs) %>%
+  st_buffer(1500) %>%
+  st_transform(project_crs) %>%
+  # ? make buffer into a single featuer
+  st_union() %>%
+  # combine buffered routes with original monitoring area
+  st_union(monitoring_area_shp) %>%
+  st_union(r6_south) %>%
+  st_union(r7_north)
+
+saveRDS(monitoring_area_shp2, file.path("Data", "Output", "GIS", "monitoring_area_shp2.rda"))
 
 
+water_shp <- read_sf(file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles", "Other features", "Water", "DNR_Hydrography__Water_Bodies", "DNR_Hydrography__Water_Bodies.shp")) %>%
+  st_transform(project_crs)
+
+# make water feature valid - otherwise has plotting/other issues
+# #st_is_valid(water_shp) %>% table() #12 are false
+water_shp1 <- water_shp %>% 
+  st_make_valid() %>% #st_buffer(0)
+  # only keep water in the region - make file smaller
+  st_intersection(., st_transform(st_buffer(st_transform(monitoring_area_shp2, m_crs), 10e3), project_crs))
+
+saveRDS(water_shp1, file.path("Data", "Output", "GIS", "water_nearby_shp.rda"))
+
+# shapefile of monitoring land (not including water)
+monitoring_land <- st_difference(monitoring_area_shp2,
+                      st_union(water_shp1)
+                       )  
+
+saveRDS(water_shp1, file.path("Data", "Output", "GIS", "monitoring_land_shp.rda"))
+
+```
+
+
+
+size of monitoring Region
+
+```{r}
+"entire monitoring region, with water"
+## 1373.504 [km^2] 
+st_area(monitoring_area_shp2) %>%
+  set_units("km^2")
+
+
+"monitoring area without water" #: 1200.383 [km^2]
+monitoring_land %>%
+  st_area() %>%
+  set_units("km^2")
+
+monitoring_land %>%
+  st_area() %>%
+  set_units("mi^2")
+
+
+# # check that things look correct. # looks good
+# ggplot() +
+#   #geom_sf(data=water_shp1, aes(fill="water"), alpha=0.3) +
+#   #geom_sf(data=monitoring_area_shp2, aes(col="original"), alpha=0.15) +
+#   geom_sf(data=monitoring_land, aes(fill="monitoring land"), alpha=0.7)  
+   
+```
+
+
+```{r}
 
 act <- act0 %>%
   #drop duplicate locations
@@ -390,12 +499,6 @@ bbox <- st_bbox(st_transform(st_buffer(st_transform(act_shp, m_crs), 10000), pro
 
 names(bbox) <- c("left", "bottom", "right", "top")
 
-# # make a bit wider
-# wider <- (max(act_shp$longitude) - min(act_shp$longitude))*0.03
-# bbox[1] <- bbox[1] - wider
-# #this side is wider for some reason
-# bbox[3] <- bbox[3] + wider*.5
-
 # background map
 map0 <- suppressMessages(get_stamenmap(bbox = bbox, 
                                       zoom = 11,
@@ -410,22 +513,13 @@ map0 <- suppressMessages(get_stamenmap(bbox = bbox,
 # map0 + geom_point()
 ```
 
-```{r}
-#test - make monitoring area slightly larger. Issue b/c of water
 
-test <-  st_transform(
-  st_buffer( st_transform(monitoring_area_shp, m_crs), 1000),
- project_crs 
-)
-
-```
-
+ 
 
 ```{r, fig.height=10}
-map0 + 
+map1 <- map0 + 
   #monitoring area
-  geom_sf(data = monitoring_area_shp, 
-          #data = test, # monitoring_area_shp, 
+  geom_sf(data = monitoring_area_shp2, 
                 aes(fill = "Monitoring Area"), 
           inherit.aes = F,
 
@@ -448,39 +542,34 @@ map0 +
           #shape=5
            ) +
   
-
   #route lines
   geom_sf(data=routes_shp,
         aes(col = Route
             ),
-        #col = routes_shp$Route,
         inherit.aes = F,
-        #linetype="dashed",
         alpha=0.7
         ) +
   
   #monitoring stops
   geom_sf(data = mm_shp, 
           aes(col = Route,  
-              #shape="Stop"
               ),
           inherit.aes = F,
           size=2  
            ) + 
   #colocations
   geom_sf(data = filter(mm_shp, Kind == "AQS Colocation"), 
-          aes(#col = Route, #"Mobile Monitoring",
-              shape= "AQS Colocation",
-              ),
+          aes(shape= "AQS Colocation"),
           inherit.aes = F,
           size=3 
            ) + 
   
     # # add scale & N arrow to top
-  geom_sf(data = monitoring_area_shp, inherit.aes = FALSE,
+  geom_sf(data = monitoring_area_shp2, inherit.aes = FALSE,
           #don't actually the polygon our outline
           alpha=0, lwd = 0) +
-    annotation_scale(data = monitoring_area_shp, location = "tl") +
+  annotation_scale(data = monitoring_area_shp2, location = "tl") +
+  annotation_scale(data = monitoring_area_shp2, location = "tl", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
     annotation_north_arrow(location = "tl",
                            #point towards North Pole
                            which_north = "true",
@@ -515,11 +604,67 @@ map0 +
          caption = ""
          ) 
 
+map1
 
-
-#ggsave(file.path("..", "Manuscript", "Images", "f1_map.jpg"), width = 7.5, height = 10)
+#ggsave(file.path("..", "Manuscript", "Images", "monitoring_map.jpg"), width = 7.5, height = 10)
 
 ```
+
+
+add inset map 
+
+```{r}
+# example code: https://geocompr.github.io/post/2019/ggplot2-inset-maps/ 
+
+data("us_states", package = "spData")
+
+wa_map <- us_states %>%
+  filter(NAME == "Washington") %>%
+  #make sure this is in the same crs 
+  st_transform(project_crs)
+
+wa_centroid <- st_coordinates(st_centroid(wa_map))
+
+# #make bbox and sf object of a rectangular box 
+# bbox0 <- st_as_sfc(bbox) 
+
+inset_map <- ggplot() + 
+  geom_sf(data=wa_map, fill = "white", alpha=0.5) + 
+  #geom_sf(data=bbox0, fill = "white", col="blue", alpha=0.5) + 
+  geom_sf(data = monitoring_area_shp2, #aes(), 
+          fill = "pink",
+          #reduce/eliminate outline
+          lwd = 0.1,  
+          alpha = 0.7,
+           ) +
+  theme_void() + 
+  #add "WA" label
+  geom_text(aes(x = wa_centroid[1], y = wa_centroid[2]),
+            label = "WA", 
+            size=4
+                )
+  
+# inset_map
+
+# use cowplot to layer both maps
+ggdraw() +
+  draw_plot(map1) +
+  draw_plot(inset_map, 
+            # The distance along a (0,1) x- or y- axis to draw the left/bottom edge of the plot
+            x = 0.65, y = 0.005, 
+            #x = 0.25, y = 0.005, 
+            # The width and height of the plot expressed as proportion of the entire ggdraw object
+            width = 0.23, height = 0.23)
+
+
+ggsave(file.path("..", "Manuscript", "Images", "monitoring_map_inset.jpg"), width = 7.5, height = 10)
+
+```
+
+
+ 
+
+
 
 # Density Plots
 
@@ -538,9 +683,13 @@ covars <- c("log_m_to_a1", "log_m_to_a1_a2_intersect",
 
 mm_act <- mm_shp %>%
   select(covars) %>%
-  mutate(Kind = "Mobile Monitoring") %>%
+  mutate(Kind = "Mobile Monitoring Stops") %>%
   rbind(mutate(select(act_shp, covars), Kind = "ACT Cohort")) %>%
   st_drop_geometry()
+
+
+
+
 
 mm_act %>%
   gather("Covariate", "Value", -Kind) %>%
@@ -548,10 +697,12 @@ mm_act %>%
     Covariate = recode_factor(factor(Covariate),
                               "log_m_to_a1" = "Log Meters to A1 Road", 
                               "log_m_to_a1_a2_intersect" = "Log Meters to A1-A2 Intersection",
+                              "log_m_to_coast" = "Log Meters to Coast",
                               "log_m_to_l_airp" = "Log Meters to Large Airport",
-                              "log_m_to_ry" = "Log Meters to Railyard",
+                              
                               "log_m_to_l_port" = "Log Meters to Large Port",
-                              "log_m_to_coast" = "Log Meters to Coast"
+                              "log_m_to_ry" = "Log Meters to Railyard"
+                              
                               #  "elev_elevation" = "Elevation (m)",
                               # "log_m_to_a1" = "Log Meters to A1 Road",
                               # "log_m_to_a123"  = "Log Meters to A1, A2 or A3 Road",
@@ -563,7 +714,8 @@ mm_act %>%
   ) %>%
   
   ggplot(aes(x=Value, fill=Kind)) + 
-  facet_wrap(~Covariate, scales="free") + 
+  facet_wrap(~Covariate, #scales="free"
+             ) + 
   geom_density(alpha=0.3) + 
   
   theme(legend.position = "bottom") +
@@ -575,20 +727,6 @@ ggsave(file.path("..", "Manuscript", "Images", "density_plots.jpg"), width = 10,
 ```
 
 
-# Route Satistics
-
-
-```{r}
-# mm, mm_shp
-
- 
-# mm %>%
-#   group_by(Route) %>%
-#   summarize(
-#     stops = length(unique(native_id))
-#   )
-
-```
 
 
 
