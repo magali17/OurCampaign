@@ -50,9 +50,9 @@ gitcreds::gitcreds_set() # select '2' and enter new token
   * all calibrations used the reference concentration as the independent variable, and "calibrated" measurements were estimated after solving for this covariate      
   * calibrations were based on the median instrument reading of a reference concentration (i.e., a few minutes worth of data) using steady instrument readings (e.g., after applying time delays) 
   * nothing was done for these insruments, which were reset after calibration:    
-    * CO, Nephs  
+    * CO2, Nephs  
   * normal calibrations were done for   
-    * CO2, NO2_1 
+    * CO, NO2_1 
   * NO2_2 instrument was calibrated using a no intercept model since instruments were resent after zero readings and thus, these should have been failry close to the true concentration    
 
 * zero concentrations   
@@ -1480,8 +1480,10 @@ for(i in seq_along(pt_instrument_ids)) {
 #what is a low reading?
 low_q <- 0.05
 
-low_value <- readRDS(file.path("Data", "Output", "20210622 before adding new data", "stops_distribution_table.rda")) %>%
-  select(instrument_id, low = Q05)
+low_value <- readRDS(file.path("Data", "Output",  "stops_distribution_table.rda")) %>%
+  select(variable,
+    #instrument_id, 
+         low = Q05)
  
 ```
 
@@ -1497,8 +1499,53 @@ low_value <- readRDS(file.path("Data", "Output", "20210622 before adding new dat
     
 * BC_0066 is only based on one instance
 
-
 ```{r}
+#TEST  -same as below but points 
+
+print("2-min median instrument readings during zero checks")
+
+calibrations %>%
+  # look at particle instruments
+  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")))) %>%  
+  #calculate 2-min medians 
+  mutate(time = floor_date(time, unit = "2 min")) %>%
+  group_by_at(vars(-value)) %>%
+  summarize(value = median(value)) %>%  #group_by(instrument_id) %>% summarize(n())
+  # # stats for boxplots
+  # group_by(variable, instrument_id) %>%
+  # alt_boxplot(var = "value") %>%  
+  left_join(low_value) %>% #View()
+  #add if primary instrument
+  mutate(Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
+         Instrument = factor(Instrument, levels = c("Primary", "Backup"))
+         ) %>%
+  variable_relabel() %>%
+  
+  ggplot(aes(y=instrument_id, 
+             )) + 
+  facet_wrap(~variable +ufp_range_nm, scales="free") +
+  geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
+  #geom_point(aes(x=value), alpha=0.3) +
+  geom_jitter(aes(x=value, col=Instrument), alpha=0.3) +
+  
+  #geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
+  
+  # a low on-route value (for comparison)
+  geom_vline(aes(xintercept = low, linetype=paste0("Low Stop Conc\nQ", low_q)),
+             col="red"
+             ) +
+  labs(x = "Value",
+       y = "Instrument ID",
+       
+       linetype=""
+       )
+
+ggsave(filename = file.path(image_path, "SI", "zero.png"), width = 10, height = 6)
+
+```
+
+```{r, eval=F}
+# old boxplots. 
 
 print("2-min median instrument readings during zero checks")
 
@@ -1512,7 +1559,7 @@ calibrations %>%
   # stats for boxplots
   group_by(variable, instrument_id) %>%
   alt_boxplot(var = "value") %>%  
-  left_join(low_value) %>%
+  left_join(low_value) %>% #View()
   #add if primary instrument
   mutate(Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
          Instrument = factor(Instrument, levels = c("Primary", "Backup"))
@@ -1525,13 +1572,14 @@ calibrations %>%
   geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
   
   # a low on-route value (for comparison)
-  geom_point(aes(x = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
+  geom_vline(aes(xintercept = low, col=paste0("Low Stop Conc\nQ", low_q)), #size=3
+             ) +
   labs(x = "Value",
        y = "Instrument ID",
        col=""
        )
 
-ggsave(filename = file.path(image_path, "SI", "zero.png"), width = 10)
+# ggsave(filename = file.path(image_path, "SI", "zero.png"), width = 10)
 
 ```
 
@@ -1567,7 +1615,7 @@ calibrations %>%
   geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
   scale_fill_brewer(palette = "Purples") +
   # a low on-route value (for comparison)
-  geom_point(aes(x = low, col=paste0("Low Stop Conc\nQ", low_q)), size=3) +
+  geom_vline(aes(xintercept = low, col=paste0("Low Stop Conc\nQ", low_q))) +
   
   labs(x = "value",
        y = "Instrument ID",
@@ -1598,8 +1646,7 @@ calibrations %>%
   group_by(variable, instrument_id, #date, 
            filter_to, Instrument) %>%
   alt_boxplot(var = "value") %>%
-  left_join(low_value) %>% 
-  
+
   ggplot(aes(y= instrument_id, fill=filter_to, linetype=Instrument)) + 
   facet_wrap(~variable, scales="free") +
   geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
@@ -2269,42 +2316,170 @@ similar to above, but for manusctipt
 p <- list()
 
 p[[1]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "BC_0066", y.variable = "BC_0063", 
-            slope_digits = 2, alpha_value = 0.7)  
+  drop_na(BC_0066, BC_0063) %>%
+  ggplot(aes(x=BC_0066, y=BC_0063)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"BC (ng/m3)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2) + 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              #label.x = Inf, label.y = -Inf,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ) )  
+  
+  # colo.plot(x.variable = "BC_0066", y.variable = "BC_0063", 
+  #           slope_digits = 2, alpha_value = 0.7)  
 
 
 p[[2]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "CO2_14", y.variable = "CO2_19", 
-            alpha_value = 0.7
-            )  
+  drop_na(CO2_14, CO2_19) %>%
+  ggplot(aes(x=CO2_14, y=CO2_19)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"CO2 (ppm)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+
+  # colo.plot(x.variable = "CO2_14", y.variable = "CO2_19", 
+  #           alpha_value = 0.7)  
 
 p[[3]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "NO2_2", y.variable = "NO2_1",  
-            slope_digits = 0, int_digits = 2, alpha_value = 0.7)  
+  drop_na(NO2_2, NO2_1) %>%
+  ggplot(aes(x=NO2_2, y=NO2_1)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"NO2 (ppb)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+
+  # colo.plot(x.variable = "NO2_2", y.variable = "NO2_1",  
+  #           slope_digits = 0, int_digits = 2, alpha_value = 0.7)  
 
 p[[4]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "PM25_176", y.variable = "PM25_205", int_digits = 6, rmse.digits = 6, alpha_value = 0.7)  
+  drop_na(PM25_176, PM25_205) %>%
+  ggplot(aes(x=PM25_176, y=PM25_205)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"Neph (bscat/m)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+
+  # colo.plot(x.variable = "PM25_176", y.variable = "PM25_205", int_digits = 6, rmse.digits = 6, alpha_value = 0.7)  
+
 p[[5]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "PMDISC_3", y.variable = "PMDISC_8", alpha_value = 0.7)  
+  drop_na(PMDISC_3, PMDISC_8) %>%
+  ggplot(aes(x=PMDISC_3, y=PMDISC_8)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"DiSCmini, UFP (pt/cm3)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+
+#colo.plot(x.variable = "PMDISC_3", y.variable = "PMDISC_8", alpha_value = 0.7)  
 
 #that these are the only 2 non-screeend PTRAKS that were collocated 
 p[[6]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93",  alpha_value = 0.7)  
+  drop_na(PMPT_94, PMPT_93) %>%
+  ggplot(aes(x=PMPT_94, y=PMPT_93)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"P-TRAK, UFP (pt/cm3)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+
+  #colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93",  alpha_value = 0.7)  
 
 # that these are the only 2 screeend PTRAKS that were collocated 
 p[[7]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "PMPTSCREEN_94", y.variable = "PMPTSCREEN_3", alpha_value = 0.7) 
+  drop_na(PMPTSCREEN_94, PMPTSCREEN_3) %>%
+  ggplot(aes(x=PMPTSCREEN_94, y=PMPTSCREEN_3)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"P-TRAK, screened, UFP (pt/cm3)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm")+ 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+
+  #colo.plot(x.variable = "PMPTSCREEN_94", y.variable = "PMPTSCREEN_3", alpha_value = 0.7) 
 
 p[[8]] <- dt_stops3_colo_wide %>%
-  colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", alpha_value = 0.7)  
+  drop_na(PMSCAN_5, PMSCAN_3) %>%
+  ggplot(aes(x=PMSCAN_5, y=PMSCAN_3)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"NanoScan, UFP (pt/cm3)") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2) + 
+  geom_smooth(method="lm") + 
+  coord_fixed() #+ 
+  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
+  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
+  #              aes(label =  paste(#stat(eq.label),  
+  #                                 stat(n.label),
+  #                                 #stat(rr.label), 
+  #                                 sep = "*\", \"*"
+  #                                 )
+  #                  ))  
+  
+  #colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", alpha_value = 0.7)  
 
 
 print("Instrument Collocations")
 
-ggarrange(plotlist = p, ncol = 3, nrow = 4)  
+ggarrange(plotlist = p)  
 
-
-ggsave(file.path(image_path, "SI", "collocations.png"), height=10, width = 10) 
+ggsave(file.path(image_path, "SI", "collocations.png"), height=9, width = 8) 
 
 ```
 
@@ -2945,7 +3120,7 @@ trh_stops2 <- trh_stops %>%
 
 Looking at the ACT TRAP field protocol, it looks like BC, NO2 and neph (also neph PM2.5) values are collected every minute by DOE, though these are not officially validated like the hourly data are. We will use these instead of hourly data since we want to compare these readings to our 2-minute collocations.
 
-Note that BH and 10W don’t have minute data. BH has rolling 1-hour averages every 6 minutes for PM2.5 (teoms), while 10W seems to report the same thing every minute for about an hour (~58 min). 
+**Note that BH and 10W don’t have minute data. BH has rolling 1-hour averages updated every 6 minutes for PM2.5 (teoms), while 10W seems to report the same thing every minute for about an hour (~58 min).**
 
 We will have to use a mix of semi-hourly PM2.5 data and hourly data for BH and 10W since data comes from various non-minute-level sources.
 
@@ -3153,7 +3328,7 @@ doe_lm %>% summary()
     * all of our PM2.5 estimates come from neph estimates. DOE PM2.5 estimates compared here are from nephelometers when available (Duwamish, Kent, Tukwilla), otherwise from gravimetric and BAM (beta attenuation) methods (10W, BH)  
     * DOE uses site-specific neph-PM2.5 calibration curves. We will use a region calibraiton curve based on multiple AQS sites in the Spatiotemporal modeling region     
       * our MM calibration curve from the ST model excludes Duwamish, even though we use it to predict PM2.5 at Duwamish in this analysis     
-    * DOE PM2.5 "minute" readings are actually for longer time periods. For example, rolling 1-hr estimates that are updated every 6 min.
+    * **Note that BH and 10W don’t have PM2.5 minute data. BH has rolling 1-hour averages updated every 6 minutes for PM2.5 (teoms), while 10W seems to report the same thing every minute for about an hour (~58 min).**          
     * the "2-min" median estimates have slightly different start and end times for the MM and DOE estimates. DOE estimates area alwyays exactly 2-min, starting at 00 seconds. MM median stops could have started after 00 seconds into the minute and could have been sligthly longer than 2 min (e.g., 3 min).    
     
 * CO performs poorly. Performance was similarly poor when only CO_1 instrument data were compared to DOE readings.      
@@ -3199,6 +3374,7 @@ aqs_colo_p <- dt_doe_l %>%
        )
   
 aqs_colo_p 
+
 ```
 
 
@@ -3456,6 +3632,8 @@ dt_stops6 <- dt_stops5 %>%
 original_data <- dt_stops
 final_data <- dt_stops6
 
+all_stops <- length(unique(final_data$stop_id)) #value is same for original_data
+
 ```
 
 ```{r}
@@ -3475,6 +3653,8 @@ number of stops
 * CO2    
 * Neph (same as BC?)     
 * discmini (10-700)    
+
+### --> redo this to reflect Amanda's suggestions 
 
 ```{r}
 
@@ -3516,7 +3696,10 @@ full_join(s0, s1) %>%
 #* what is a low-level concentration? for zero comparison plots above
   
 stop_tb <- final_data %>%
-  group_by(variable, instrument_id) %>%
+  #use original bscat units (not PM2.5 calibration) here
+  mutate(value = ifelse(variable== "neph_bscat", value_raw, value)) %>%
+  group_by(variable, #instrument_id
+           ) %>%
   summarize(
     N = n(),
     Min = min(value),
@@ -3639,3 +3822,11 @@ fieldnotes2 <- fieldnotes %>%
 
 ```
 
+# Session Info
+
+```{r}
+citation("ggmap")
+
+sessionInfo()
+
+```

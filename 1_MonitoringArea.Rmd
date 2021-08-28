@@ -53,35 +53,6 @@ theme_update(legend.position = "bottom")
 
 ### ---> ? how to convert route file w/ many segments into individual routes?
 
-###--> delete aqs file w/ only 6 sites?
-
-
-```{r}
-
-  
-
-  
- 
-# # TEST
-# map0 + 
-#   #geom_sf(data=test, inherit.aes = F) +
-# #new monitoring region
-#   geom_sf(data=monitoring_area_shp2, #routes_shp2,
-#         #aes(col = Route), 
-#         inherit.aes = F, 
-#         lwd = 0.3, alpha = 0.3, #alpha=0.7
-#         ) + 
-# # lines
-#   geom_sf(data=routes_shp,
-#         aes(col = Route
-#             ),
-#         inherit.aes = F,
-#         alpha=0.7
-#         ) 
-  
-
-```
-
 
 ```{r}
 gis_path0 <- file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles") 
@@ -214,9 +185,29 @@ monitoring_land <- st_difference(monitoring_area_shp2,
                       st_union(water_shp1)
                        )  
 
-saveRDS(water_shp1, file.path("Data", "Output", "GIS", "monitoring_land_shp.rda"))
+saveRDS(monitoring_land, file.path("Data", "Output", "GIS", "monitoring_land_shp.rda"))
 
 ```
+
+
+
+```{r}
+#plot(monitoring_area_shp$geometry)
+
+
+# test
+# 
+# water0 <- read_sf(file.path("..", "GIS", "Shapefiles", "Other features", "Open_water_for_King_County_and_portions_of_adjacent_counties___wtrbdy_area", "Open_water_for_King_County_and_portions_of_adjacent_counties___wtrbdy_area.shp"))
+# 
+# # resulting file is larger than before
+# water0.1 <- water0 %>% 
+#   st_make_valid() %>% #st_buffer(0)
+#   # only keep water in the region - make file smaller
+#   st_intersection(., st_transform(st_buffer(st_transform(monitoring_area_shp2, m_crs), 10e3), project_crs))
+
+
+```
+
 
 
 
@@ -517,6 +508,7 @@ map0 <- suppressMessages(get_stamenmap(bbox = bbox,
  
 
 ```{r, fig.height=10}
+
 map1 <- map0 + 
   #monitoring area
   geom_sf(data = monitoring_area_shp2, 
@@ -595,6 +587,13 @@ map1 <- map0 +
          
          ) +
   
+  #add attribution/reference to bottom left
+  geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.5,
+                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+                ),
+            size=3
+            ) +
+  
     labs( 
          x = "Longitude",
          y = "Latitude",
@@ -604,16 +603,14 @@ map1 <- map0 +
          caption = ""
          ) 
 
-map1
-
-#ggsave(file.path("..", "Manuscript", "Images", "monitoring_map.jpg"), width = 7.5, height = 10)
+#map1
 
 ```
 
 
 add inset map 
 
-```{r}
+```{r, fig.height=10}
 # example code: https://geocompr.github.io/post/2019/ggplot2-inset-maps/ 
 
 data("us_states", package = "spData")
@@ -657,7 +654,7 @@ ggdraw() +
             width = 0.23, height = 0.23)
 
 
-ggsave(file.path("..", "Manuscript", "Images", "monitoring_map_inset.jpg"), width = 7.5, height = 10)
+ggsave(file.path("..", "Manuscript", "Images", "monitoring_map.jpg"), width = 7.5, height = 10)
 
 ```
 
@@ -681,14 +678,13 @@ covars <- c("log_m_to_a1", "log_m_to_a1_a2_intersect",
             "log_m_to_coast"
             )
 
+saveRDS(covars, file.path("Data", "Output", "density_covars.rda"))
+
 mm_act <- mm_shp %>%
   select(covars) %>%
   mutate(Kind = "Mobile Monitoring Stops") %>%
   rbind(mutate(select(act_shp, covars), Kind = "ACT Cohort")) %>%
   st_drop_geometry()
-
-
-
 
 
 mm_act %>%
@@ -702,14 +698,9 @@ mm_act %>%
                               
                               "log_m_to_l_port" = "Log Meters to Large Port",
                               "log_m_to_ry" = "Log Meters to Railyard"
-                              
-                              #  "elev_elevation" = "Elevation (m)",
-                              # "log_m_to_a1" = "Log Meters to A1 Road",
-                              # "log_m_to_a123"  = "Log Meters to A1, A2 or A3 Road",
-                              #  "log_m_to_l_airp" = "Log Meters to Large Airport",
-                              # "log_m_to_rr" = "Log Meters to Railroad",
-                              # "pop10_s01000" = "Population Within a 1 km Radius"
-                               )
+                              ),
+    Covariate = gsub("Log Meters to ", "", Covariate),
+    Value = exp(Value)
     
   ) %>%
   
@@ -717,10 +708,10 @@ mm_act %>%
   facet_wrap(~Covariate, #scales="free"
              ) + 
   geom_density(alpha=0.3) + 
-  
   theme(legend.position = "bottom") +
-  
-  labs(fill = "Location")
+  labs(fill = "Location",
+       x = "Proximity (Meters)"
+       )
    
 ggsave(file.path("..", "Manuscript", "Images", "density_plots.jpg"), width = 10, height = 8)
 
@@ -730,3 +721,26 @@ ggsave(file.path("..", "Manuscript", "Images", "density_plots.jpg"), width = 10,
 
 
 
+# Session Info
+
+```{r}
+#R.Version()$version.string
+
+si <- sessionInfo() 
+
+sessionInfo()   
+
+# si[1]
+# 
+# si2 <- si#$otherPkgs
+
+si$running
+
+
+#names(si2) 
+#test3 <- si2[1]  
+
+print(si, RNG = TRUE, locale = FALSE)
+#toLatex(si, locale = FALSE) # shortest
+
+```

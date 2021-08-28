@@ -297,11 +297,11 @@ variable_relabel <- function(dt, var = "variable"#, add_instrument=F
       ufp_range_nm = ifelse(var=="ns_total_conc", "10-420",
                          ifelse(var=="pmdisc_number", "10-700",
                                 ifelse(var=="pnc_noscreen", "20-1,000",
-                                       ifelse(var=="pnc_screen", "50-1,000", 
-                                              ifelse(var=="pnc_20_50", "20-50",
+                                       ifelse(var=="pnc_screen", "36-1,000", 
+                                              ifelse(var=="pnc_20_36", "20-36",
                                                      "-"
                                        ))))),
-      #ufp_range_nm = factor(ufp_range_nm, levels = c("10-700", "10-420", "20-1,000", "50-1,000")),
+      #ufp_range_nm = factor(ufp_range_nm, levels = c("10-700", "10-420", "20-1,000", "36-1,000")),
       
       var = recode_factor(factor(var),
                           "co_ppm" = "CO (ppm)",
