@@ -73,7 +73,7 @@ gitcreds::gitcreds_set() # select '2' and enter new token
   * screened P-TRAKS readings < 100 pt/cm3
   
 * inspected time series data during times when extreme instrument concentrations (min & max conc) were observed. Readings were compared against other instrument readings (i.e., were other instruments also reporting elevated levels?)   
-  * dropped one instance of CO2_19 (backup instrument) readings when readings were dissimilar from other instruments. Note, this instrument is fullu dropped later.
+  * dropped one instance of CO2_19 (backup instrument) readings when readings were dissimilar from other instruments. Note, this instrument is fully dropped later.
 
 * compared & calibrated collocated duplicate instruments 
   * since the two screened P-TRAKS that collected most of the data were not collocated, we plotted density curves to show that their distribtuions were similar 
@@ -912,8 +912,35 @@ dt <- dt0 %>%
   # drop few MA200 readings w/ errors
   anti_join(drop_bc)
 
+nrow(dt0) - nrow(dt)
 
 ```
+
+
+```{r}
+#are any stops dropped as a whole as a result of dropping individual readings w/ flags? - no
+t1 <- dt0 %>%
+  #filter(variable %in% c("no2", "ma200_ir_bc1")) %>%
+  group_by(variable) %>%
+  summarize(
+    stops_dt0 = length(unique(stop_id))
+  )
+  
+t2 <- dt %>%
+  #filter(variable %in% c("no2", "ma200_ir_bc1")) %>%
+  group_by(variable) %>%
+  summarize(
+    stops_dt = length(unique(stop_id))
+  )
+ 
+left_join(t1, t2) %>%
+  mutate(stops_dropped = stops_dt0 - stops_dt) %>%
+  kable(caption = "number of stops dropped as a result of BC and NO2 flags") %>%
+  kable_styling()
+  
+
+```
+
 
 
 ## Aethalometer Filter attenuation 
@@ -2000,6 +2027,23 @@ dt2 <- dt_stops2 %>%
 
 ```
 
+```{r}
+# stops dropped
+t1 <- dt_stops %>%
+  group_by(variable) %>%
+  summarize(dt_stops = length(unique(stop_id)))
+
+t2 <- dt_stops2 %>%
+  group_by(variable) %>%
+  summarize(dt_stops2 = length(unique(stop_id)))
+
+left_join(t1, t2) %>%
+  mutate(stops_diff = dt_stops - dt_stops2 ) %>%
+  kable(caption = "stops dropped b/c readings: 1. outside instruemtn range, 2. NanoScans and non-screened P-TRAKS readings < 300 pt/cm3, 3. screened P-TRAKS readings < 100 pt/cm3. This table is almost identical to the final table, other than for CO2 - readings are dropped late rb/c they are different from other instrument readings?") %>%
+  kable_styling()
+
+```
+
 
 
 # Time series of when the lowest and highest values were observed
@@ -2182,6 +2226,25 @@ dt_stops3 <- dt_stops2 %>%
   )
 
 ```
+
+```{r}
+
+# stops dropped
+t1 <- dt_stops2 %>%
+  group_by(variable) %>%
+  summarize(dt_stops2 = length(unique(stop_id)))
+
+t2 <- dt_stops3 %>%
+  group_by(variable) %>%
+  summarize(dt_stops3 = length(unique(stop_id)))
+
+left_join(t1, t2) %>%
+  mutate(stops_diff = dt_stops2 - dt_stops3) %>%
+  kable(caption = "backup CO2 readings are dropped b/c they are different from collocated backup instrument. # of stops is the same b/c the primary instrumetn will be used.") %>%
+  kable_styling()
+
+```
+
 
 
 # Collocated duplicate instruments
@@ -2936,6 +2999,22 @@ ns_stops3 <- ns_stops2 %>%
 ```
 
 
+```{r}
+# stops dropped
+t1 <- dt_stops3 %>%
+  group_by(variable) %>%
+  summarize(dt_stops3 = length(unique(stop_id)))
+
+t2 <- dt_stops4 %>%
+  group_by(variable) %>%
+  summarize(dt_stops4 = length(unique(stop_id)))
+
+left_join(t1, t2) %>%
+  mutate(stops_diff = dt_stops3 - dt_stops4) %>%
+  kable(caption = "all backup CO2 readings are dropped b/c they appear to be unreliable") %>%
+  kable_styling()
+
+```
 
 
 
@@ -3632,7 +3711,7 @@ dt_stops6 <- dt_stops5 %>%
 original_data <- dt_stops
 final_data <- dt_stops6
 
-all_stops <- length(unique(final_data$stop_id)) #value is same for original_data
+all_stops <- length(unique(final_data$stop_id)) #value is same for original_data. #9047
 
 ```
 
@@ -3646,15 +3725,17 @@ final_second_data <- final_data %>%
 ```
 
 
-number of stops
+* some individual, high-resolution readings were dropped b/c of flags, but this did not impact the number of stop medians    
+  * non-fatal flag: NO2: readings during automatic baseline checks        
+  * fata flags: MA200 (BC): pump flow and optical saturation errors    
+  * QC decision: screened P-TRAKS readings < 100 pt/cm3 (other instruments still had readings, so this did not impact the # of stops with readings)      
 
-* NO2   ____
-* BC was probably dropped for having negative concentrations (outside the instrument measuremement range)   
-* CO2    
-* Neph (same as BC?)     
-* discmini (10-700)    
+* these stop medians were dropped:     
+  * readings outside the range of each instrument's reporting range     
+  * NanoScans and non-screened P-TRAKS readings < 300 pt/cm3    
+  * dropped all CO2_19 (backup instrument) readings b/c unreliable, it did not correlate well with primary instrument, and readings seemed generallyunstable. This reduced the number of CO2 readings when this instrument was used on its own  
+  * dropped all CO data because it they did not correlate well across duplicate instruments or with DOE data.
 
-### --> redo this to reflect Amanda's suggestions 
 
 ```{r}
 
@@ -3662,31 +3743,53 @@ s0 <- original_data %>%
   filter(variable != "co_ppm") %>%
   group_by(variable) %>%
   summarize(
-    original_stops = length(unique(stop_id))
+    original_stops = length(unique(stop_id)),
+    original_stops_pct = paste0(format(original_stops/all_stops*100, digits = 2, nsmall = 2), "%")
   )
+
 s1 <- final_data %>%
   group_by(variable) %>%
   summarize(
-    final_stops = length(unique(stop_id))
+    final_stops = length(unique(stop_id)),
+    final_stops_pct = paste0(format(final_stops/all_stops*100, digits = 2, nsmall = 2), "%")
   )
 
+ 
 full_join(s0, s1) %>%
   variable_relabel() %>%
   mutate(variable = ifelse(grepl("UFP", variable), paste0(variable, ", ", ufp_range_nm, "nm"), as.character(variable) )) %>%
   select(-ufp_range_nm) %>%
-  rbind(c("TOTAL", sum(.$original_stops), sum(.$final_stops))) %>%
-  mutate_at(vars(-variable), ~as.numeric(.)) %>%
+  #rbind(c("TOTAL", sum(.$original_stops), sum(.$final_stops))) %>%
+  #mutate_at(vars(-variable), ~as.numeric(.)) %>%
   mutate(
     stops_dropped = original_stops - final_stops,
-    percent_stops_dropped = stops_dropped/original_stops*100
-  ) %>%
-  kable(caption = "Mobile monitoring stops", 
+    percent_stops_dropped = paste0(round(stops_dropped/original_stops*100, 2), "%"),
+     ) %>%
+  relocate((contains("dropped")), .after = original_stops_pct ) %>%
+  
+  rbind(c("TOTAL", sum(.$original_stops), paste0(round(71131/(8*all_stops)*100, 2), "%"), 
+          sum(.$stops_dropped), paste0(round(435/(71131)*100, 2), "%"),
+          sum(.$final_stops), paste0(round(70696/(8*all_stops)*100, 2), "%")
+          )) %>%
+  mutate_at(vars(original_stops, stops_dropped, final_stops), ~as.numeric(.)) %>%
+  
+  kable(caption = paste0("Mobile monitoring stops. Percents for the original stop measurements and the final stops are based on the total number of stops in the campaign (", all_stops, "); percents for the stops dropped are based on the original stop measurements" ), 
         digits = 2, 
-        col.names = c("Pollutant", "Original Stops", "Final Stops", "Stops Dropped", "Percent Stops Dropped"), 
+        col.names = c("", rep(c("N", "%"),3)),
         format.args = list(big.mark=', ')
         ) %>%
-  kable_styling()
-    
+  kable_styling() %>%
+  add_header_above( c("Pollutant", "Original Stop Measurements" =2, "Dropped Stop Measurements" =2, "Final Stop Measurements" = 2))
+
+
+```
+
+```{r}
+#total row %s
+paste0(round(71131/(8*all_stops)*100, 2), "%")
+
+
+ 
 
 ```
 

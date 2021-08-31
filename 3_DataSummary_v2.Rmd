@@ -290,6 +290,19 @@ uniqe_variables <-
 
 bin_instruments <- sort(unique(stops_bins$instrument))
 
+
+
+non_ufp_p <- str_subset(string =  unique_pollutants, 
+           pattern = "UFP", 
+           negate = T) %>%
+  sort()
+
+
+ufp_p <- str_subset(string =  unique_pollutants, 
+           pattern = "UFP", 
+           negate = F) %>% unique()
+
+
 ```
 
 # Route Statistics
@@ -736,6 +749,9 @@ visit_conc_bins <- stops_bins %>%
 line_col <- "red"
 line_a <- 0.5
 
+```
+
+```{r, eval=F}
 print("Distribution of visit concentrations by site for PM2.5, BC, NO2 and CO2 (N~29 visits per site). Boxes show the site-specific 25th, 50th and 75th quantile; whiskers show the 5th and 95th quantiles. Vertical lines show the median (solid), 5th (dashed), and 95th (dashed) quantile concentration for all the sites.")
 
 #non-ufp plots
@@ -790,6 +806,172 @@ ggsave(file = file.path(image_path, "SI", "visit_boxplots_ufp.png"),
          height = 9, width = 7)
 
 ```
+
+maps instead of boxplots like above
+
+```{r}
+#location_quant %>%
+location_quant2 <- stops %>%
+  #filter(!grepl("UFP", pollutant)) %>%
+  #calc stats for alternative boxplots
+  group_by(pollutant, ufp_range_nm, location, #location_no
+           ) %>%
+  summarize(
+    Q05 = quantile(value, 0.05),
+    Q50 = median(value),
+    Q95 = quantile(value, 0.95),
+    IQR = IQR(value)
+    #IQR = Q95 - Q05
+  ) %>% 
+  gather("Quantile", "value", 
+         "IQR"
+         #starts_with("Q")
+         ) %>% 
+  left_join(locations) 
+ 
+
+```
+
+```{r}
+p <- list()
+
+for(i in seq_along(non_ufp_p)) {
+#i=1
+   
+   p[[i]] <- ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, 
+            aes(fill = "Monitoring Area"), show.legend = F,
+            alpha=0.1, 
+            #reduce/eliminate outline
+            lwd = 0.1) +
+    
+    #annual averages
+    geom_point(data=filter(location_quant2, pollutant == non_ufp_p[i]),
+             aes(x=longitude, y=latitude, col=value), 
+             inherit.aes = F, size=2)  +
+    scale_color_gradient(name = "IQR Conc",
+                        low = "yellow", high = "red") +
+    facet_grid(Quantile~pollutant)  + 
+
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank(),
+    
+    strip.background.y = element_blank(), strip.text.y = element_blank()
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1, nsmall = 1)
+                       ) +
+  #   #arrange legend order
+  # guides(col = guide_colorbar(order = 2),
+  #             fill = guide_legend(order = 1)
+  #        ) +
+    #add attribution/reference to bottom left
+    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+                ),
+            size=2.5
+            ) +
+  labs(x = "",#"Longitude",
+       y = ""#, #"Latitude",
+       #fill = ""
+       ) 
+   
+   #add stuff to first map
+   if(i == 1) {
+     p[[i]] <- p[[i]] +  
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+       annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) 
+       
+     }
+  
+  
+# p[[i]]   
+}
+
+ggarrange(plotlist = p#, #ncol=4, #align = "h"  
+          ) %>%
+  annotate_figure(left = "Latitude", bottom = "Longitude")
+
+ggsave(file = file.path(image_path, "SI", "visit_maps_iqr_non_ufp.png"),
+         height = 11, width = 7)
+
+```
+
+```{r}
+
+ggmap(ggmap = map0, darken = c(.5, "white")) +
+  #monitoring area
+  geom_sf(data=monitoring_area_shp, inherit.aes = F, 
+          aes(fill = "Monitoring Area"), show.legend = F,
+          alpha=0.1, 
+          #reduce/eliminate outline
+          lwd = 0.1) +
+  
+  #annual averages
+  geom_point(data=filter(location_quant2, pollutant == ufp_p),
+           aes(x=longitude, y=latitude, col=value), 
+           inherit.aes = F, size=2)  +
+  scale_color_gradient(name = "IQR Conc",
+                      low = "yellow", high = "red") +
+  facet_wrap(~pollutant+ufp_range_nm, nrow =  2 )  + 
+
+theme_bw() +
+theme(
+  legend.justification=c(0,1),  
+  legend.position=c(0,1),  
+  legend.background =  element_blank(),
+  
+  strip.background.y = element_blank(), strip.text.y = element_blank()
+  ) +
+  coord_sf(expand = F) +
+  scale_x_continuous(breaks = map_x_labels, labels = map_x_labels) +
+  scale_y_continuous(breaks = map_y_labels, 
+                     labels = format(map_y_labels,digits = 1, nsmall = 1)
+                     ) +
+#   #arrange legend order
+# guides(col = guide_colorbar(order = 2),
+#             fill = guide_legend(order = 1)
+#        ) +
+  #add attribution/reference to bottom left
+  geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+              label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+              ),
+          size=2.5
+          ) +
+labs(x = "Longitude",
+     y = "Latitude"
+     ) +
+  
+# add scale & N arrow to top rught
+  annotation_scale(location = "tr") +
+  annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+     annotation_north_arrow(location = "tr",
+                         #point towards North Pole
+                         which_north = "true",
+                         pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering
+                         ) 
+       
+    
+ggsave(file = file.path(image_path, "SI", "visit_maps_iqr_ufp.png"),
+         height = 14, width = 8)
+
+```
+
+
 
 
 
@@ -848,17 +1030,19 @@ print("Median site visit concentrations by season. Lines connect median monthly 
 
 stops %>%
     mutate(month =month(time, label = T),
+           ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)
            ) %>%  
     #calc stats for alternative boxplots
     group_by(pollutant, ufp_range_nm, #month, 
              season) %>%
-    alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>% 
+    alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>% #View()
     
     ggplot(aes(x=season, #x=month, 
-               fill=ufp_range_nm)) +
+               fill=ufp_range_nm
+               #fill= interaction(ufp_range_nm, pollutant)
+               )) +
     geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
-    #stat_summary(aes(y=Q50, group=ufp_range_nm), fun="mean", geom="line", size=1) +
-  facet_wrap(~pollutant, #~season
+  facet_wrap(~pollutant, 
              scales="free", nrow = 3) +
     labs(y= "Value",
          x="Month",
@@ -900,7 +1084,9 @@ by weekday
 print("Median site visit concentrations by day of the week. Lines connect median monthly concentrations.")
 
 stops %>%
-  mutate(dow = ifelse(day %in% c("Sat", "Sun"), "Weekend", "Weekday")) %>%
+  mutate(dow = ifelse(day %in% c("Sat", "Sun"), "Weekend", "Weekday"),
+         ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)
+         ) %>%
   #calc stats for alternative boxplots
   group_by(pollutant, ufp_range_nm, #day, 
            dow
@@ -928,17 +1114,18 @@ by hour
 ```{r, fig.height=12}
 
 stops %>%
-  mutate(hour = factor(hour, levels = c(4:23, 0))) %>%
+  mutate(hour = factor(hour, levels = c(4:23, 0)),
+         ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)
+         ) %>%
     #calc stats for alternative boxplots
-    group_by(pollutant, ufp_range_nm, hour) %>%
+    group_by(pollutant2, ufp_range_nm, hour) %>%
     alt_boxplot(var = "value") %>%  
     
     ggplot(aes(x=hour, fill=ufp_range_nm)) +
     geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
-     #stat_summary(aes(y=Q50, group=ufp_range_nm,), fun="mean", geom="line",size=0.3, col="blue") +
-    
-  facet_wrap(~pollutant+ufp_range_nm, scales="free", nrow = 4
-             ) +
+     
+  facet_wrap(~pollutant2, scales="free", nrow = 4) +
+  theme(legend.position = "none") +
     
     labs(y= "Value",
          x= "Hour",
@@ -956,17 +1143,16 @@ spaghetti plots
 "Site-specific pollutant concentrations over. Thin lines show site-specific smooth (loess) fits for median visit concentrations (N~29 visits/site). Black lines show the overall smooth trends for all of the sites."
 
 stops %>%
+  mutate(ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)) %>%
     ggplot(aes(x=time, y=value)) +
-   #stat_summary( fun.y=mean, geom="line", size=0.1, alpha=0.3) +
-      geom_smooth( se=F,
+       geom_smooth( se=F,
               size=0.1, alpha=0.8,
               aes(col=ufp_range_nm, group=location), show.legend = F
               ) +
   #overall trend
-  geom_smooth(se=F, col="black"
-              ) +
+  geom_smooth(se=F, col="black") +
   
-  facet_wrap(~pollutant+ufp_range_nm, scales="free", nrow = 4) +
+  facet_wrap(~pollutant2, scales="free", nrow = 4) +
     labs(y= "Value",
          x= "Date",
          col = "UFP Range (nm)"
@@ -1151,6 +1337,8 @@ print("Annual average site concentrations")
   
 #boxplots
 annual %>%
+    mutate(ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)) %>%
+
   ggplot(aes(x=pollutant, y=value, fill=ufp_range_nm)) + 
   facet_wrap(~pollutant, scales= "free") + 
   geom_boxplot() +
@@ -1397,17 +1585,17 @@ map0 <- suppressMessages(get_stamenmap(
 
 unique_p <- distinct(annual[c("pollutant", "ufp_range_nm")])
 
-non_ufp_p <- str_subset(string =  unique_p$pollutant, 
-           pattern = "UFP", 
-           negate = T) %>%
-  #factor(levels = levels(annual$pollutant)) %>%
-  sort()
-
-
-ufp_p <- str_subset(string =  unique_p$pollutant, 
-           pattern = "UFP", 
-           negate = F) %>% unique()
-
+# non_ufp_p <- str_subset(string =  unique_p$pollutant, 
+#            pattern = "UFP", 
+#            negate = T) %>%
+#   #factor(levels = levels(annual$pollutant)) %>%
+#   sort()
+# 
+# 
+# ufp_p <- str_subset(string =  unique_p$pollutant, 
+#            pattern = "UFP", 
+#            negate = F) %>% unique()
+# 
 
 
 ```

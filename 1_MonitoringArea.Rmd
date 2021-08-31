@@ -658,6 +658,140 @@ ggsave(file.path("..", "Manuscript", "Images", "monitoring_map.jpg"), width = 7.
 
 ```
 
+## Abstract/TOC art
+
+title: "Mobile monitoring of traffic-related air pollution for a prospective cohort study in the greater Seattle area"
+
+* zoom in to primary map; make simpler (e.g., no legends); use [UW colors - purple dots](https://www.washington.edu/brand/graphic-elements/primary-color-palette/)      
+* drop car; shorten text
+
+
+
+
+## option 1
+
+```{r}
+# create background map for grid/mapping
+one_route_shp <- routes_shp %>%
+  filter(Route %in% c(1,2, 9))
+
+#make box little bigger than monitoring area
+bbox2 <- st_bbox(st_transform(st_buffer(st_transform(one_route_shp, m_crs), 1000), project_crs ))
+
+names(bbox2) <- c("left", "bottom", "right", "top")
+
+# background map
+map0_zoom <- suppressMessages(get_stamenmap(bbox = bbox2, 
+                                      zoom = 10, 
+                                      #maptype = "terrain-lines" #
+                                     maptype = "toner-background" #background #lines
+                                       
+                                      )
+                         ) %>%
+  # Make basic map image from the tiles
+  ggmap(ggmap = ., #darken = c(0.5, "white")
+        #UW gold background
+        darken = c(0.4,  "#b7a57a")
+        ) + theme_void()
+
+## usage example: 
+#map0_zoom #%>% ggmap()  
+
+```
+
+
+
+```{r, fig.height=10}
+
+map0_zoom + 
+  #route lines
+  geom_sf(data=routes_shp,inherit.aes = F,
+          #UW purple 
+          col = "#4b2e83", #alpha=0.7
+        ) +
+  
+  #monitoring stops
+  geom_sf(data = mm_shp, inherit.aes = F,
+            col = "#4b2e83", size=2  
+           )  
+
+```
+
+## option 2
+
+```{r}
+# TEST
+
+#basic outline shapefile for near UW study area
+kc_shp <- read_sf(file.path(
+  "..", "GIS", "Shapefiles", "Other features","Congressional_Districts_in_King_County___congdst_area", "Congressional_Districts_in_King_County___congdst_area.shp"
+  )) %>%
+  st_transform(project_crs) %>%
+  #make into one polygon
+  st_union()
+
+#plot(kc_shp) # $geometry
+
+```
+
+```{r}
+one_route_shp2 <- routes_shp %>%
+  filter(Route %in% c(1, 2, 3, 9))
+
+bbox3 <- st_bbox(one_route_shp2) %>% as.vector()
+
+#modify xmin, xmax & ymax 
+bbox3[1] <- st_bbox(one_route_shp2)[1]*1.0003  %>% as.vector()
+
+#bbox3[2] <- bbox3[2]*1.001 %>% as.vector()  
+bbox3[2] <- bbox3[2]*1.0013 %>% as.vector()  
+
+bbox3[3] <- st_bbox(one_route_shp2)[3]*.9985 %>% as.vector()   #st_bbox(one_route_shp2)[3]*.999 %>% as.vector()  
+
+#bbox3[4] <- st_bbox(kc_shp)[4]*.9999 %>% as.vector()
+bbox3[4] <- st_bbox(kc_shp)[4]*.9995 %>% as.vector()
+
+text_size <- 2.5
+
+ggplot() +
+  geom_sf(data=kc_shp, fill = "#b7a57a", alpha=0.3, size=0.1) +
+  #route lines
+  geom_sf(data=routes_shp,inherit.aes = F,
+          #UW purple 
+          col = "#4b2e83",  size=0.2, alpha=0.6#linetype=3 
+        ) +
+  #monitoring stops
+  geom_sf(data = mm_shp, inherit.aes = F,
+            col = "#4b2e83", size=0.5, alpha=0.8
+           )  + 
+  coord_sf(xlim = bbox3[c(1,3)], ylim = bbox3[c(2,4)], expand = FALSE) +
+  
+  geom_label(aes(label = c(paste0("309 stops along 9 fixed routes", 
+                                 "\n\n29 temporally-balanced samples"#, "\n\nUFP, BC, PM2.5, NO2, CO2"
+                                  )),
+            x=-122.155, #x=-122.08, 
+            y=47.714,  
+            hjust=0, 
+            ), size=text_size, 
+            col = "#4b2e83"
+            ) +
+  geom_label(aes(label = c("UFP\nBC\nPM2.5\nNO2\nCO2"),
+            #x=-122.03,
+            x=-121.935, 
+            y=47.621, hjust=0,  
+             ), size=text_size, 
+            col = "#4b2e83" #, "#85754d",
+            ) + 
+  #only keep map outline
+  #theme_void() 
+  theme_linedraw() +
+  theme_update(panel.background=element_blank())
+  
+
+ggsave(file.path("..", "Manuscript", "Images", "toc_map.jpg"), width = 3.25, height = 1.75,dpi = 300, units = "in")
+
+
+```
 
  
 
