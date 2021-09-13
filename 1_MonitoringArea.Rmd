@@ -51,8 +51,7 @@ theme_update(legend.position = "bottom")
 
 # upload data 
 
-### ---> ? how to convert route file w/ many segments into individual routes?
-
+ 
 
 ```{r}
 gis_path0 <- file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles") 

@@ -73,8 +73,6 @@ image_path <- file.path("..", "Manuscript", "Images")
 
 # Upload data
 
-###--> add uncalibrated data/other data for sensitivity analyses 
-
 ```{r}
 #functions
 source("0_Functions.R")
@@ -224,7 +222,7 @@ bin_range_lvs <- ns %>%
   pull(ufp_range_nm) %>%
   c(., "20-36", "36-1,000")
 
-ptrak_bin_range <- c("20-36", "36-1,000")
+ptrak_bin_range <- c("20-36 nm", "36-1,000 nm")
 ns_bin_range <- setdiff(bin_range_lvs, c("median", ptrak_bin_range))
 
 
@@ -719,6 +717,7 @@ boxplots
 
 ```{r}
 
+
 # like table above, but formatted differently
 visit_conc <- stops %>%
   group_by(pollutant, ufp_range_nm) %>%
@@ -809,7 +808,7 @@ ggsave(file = file.path(image_path, "SI", "visit_boxplots_ufp.png"),
 
 maps instead of boxplots like above
 
-```{r}
+```{r} 
 #location_quant %>%
 location_quant2 <- stops %>%
   #filter(!grepl("UFP", pollutant)) %>%
@@ -833,7 +832,39 @@ location_quant2 <- stops %>%
 ```
 
 ```{r}
-p <- list()
+### --> moved this up from below 
+
+```
+
+```{r}
+
+#annual2 <- st_as_sf(annual, coords = c("longitude", "latitude"),  remove = F, crs=crs_deg) #%>% st_transform(crs = crs_m)
+
+#need bbox w/ lat/long coordinates
+bbox <- st_bbox(st_transform(st_buffer(st_transform(monitoring_area_shp, crs_m), 10000), crs_deg))
+
+names(bbox) <- c("left", "bottom", "right", "top")
+
+map0 <- suppressMessages(get_stamenmap(
+  bbox = bbox, 
+  zoom = 11, 
+  maptype = "toner-lite" #has airport symbol
+  #maptype = "toner-background" #roads & water but no airport
+    ))
+#map0 %>% ggmap(darken = c(.4, "white"))
+
+  
+
+#unique_p <- distinct(annual[c("pollutant", "ufp_range_nm")])
+
+ 
+# 
+```
+
+
+
+```{r}
+p <- list() 
 
 for(i in seq_along(non_ufp_p)) {
 #i=1
@@ -1046,7 +1077,7 @@ stops %>%
              scales="free", nrow = 3) +
     labs(y= "Value",
          x="Month",
-         fill = "UFP Range (nm)"
+         fill = "UFP Range"
          )  
 
 ggsave(file = file.path(image_path, "SI", "temporal_season.png"),
@@ -1073,7 +1104,7 @@ stops_bins %>%
              scales="free") +
     labs(y= "Value",
          x="Month",
-         col = "UFP Range (nm)"
+         col = "UFP Range"
          )  
 ```
 
@@ -1101,7 +1132,7 @@ stops %>%
              nrow = 3) +
   labs(y= "Value",
        x="Day",
-       fill = "UFP Range (nm)"
+       fill = "UFP Range"
   )
 
 
@@ -1114,7 +1145,10 @@ by hour
 ```{r, fig.height=12}
 
 stops %>%
-  mutate(hour = factor(hour, levels = c(4:23, 0)),
+  #don't include midnight, since little data here, and it makes it seem like instrument clocks were off
+  filter(hour !=0) %>%
+  mutate(hour = factor(hour, levels = c(4:23#, 0
+                                        )),
          ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)
          ) %>%
     #calc stats for alternative boxplots
@@ -1129,7 +1163,7 @@ stops %>%
     
     labs(y= "Value",
          x= "Hour",
-         fill = "UFP Range (nm)"
+         fill = "UFP Range"
          )  
 
 ggsave(file = file.path(image_path, "SI", "temporal_hour.png"),
@@ -1155,7 +1189,7 @@ stops %>%
   facet_wrap(~pollutant2, scales="free", nrow = 4) +
     labs(y= "Value",
          x= "Date",
-         col = "UFP Range (nm)"
+         col = "UFP Range"
          )  
 
 ggsave(file = file.path(image_path, "SI", "spaghetti_plots.png"),
@@ -1344,7 +1378,7 @@ annual %>%
   geom_boxplot() +
   labs(x="Pollutant",
        y = "Value",
-       fill = "UFP Range (nm)"
+       fill = "UFP Range"
        )
 
 ggsave(file.path(image_path, "SI", "annual_avg.png"), height = 6, width = 7)
@@ -1425,12 +1459,13 @@ ggsave(file.path(image_path, "SI", "site_annual_avg_bin.png"), height = 9, width
 ```{r}
 # site level   
 trh0 %>%
-  #calculate each site's mean reading
-  group_by(location, variable) %>%
-  summarize(value = mean(value)) %>%
+  # #calculate each site's mean reading
+  # group_by(location, variable) %>%
+  # summarize(value = mean(value)) %>%
   #summarize the distribution of site means
   group_by(variable) %>%
   summarize(
+    #N = n(),
     Min = min(value),
     Q05 = quantile(value, 0.05),
     Q25 = quantile(value, 0.25),
@@ -1446,7 +1481,7 @@ trh0 %>%
                              )
   ) %>%
   rename(Variable = variable) %>%
-  kable(caption = "Distribution of site-specific annual average temperature and relative humidity values. N = 309 sites.", 
+  kable(caption = "Distribution of site-specific annual average temperature and relative humidity values.", # N = 309 sites.",  # or N=9,047 stops
         digits = 0
         ) %>%
   kable_styling()
@@ -1565,37 +1600,27 @@ cor(cor_df) %>% as.data.frame() %>%
 ```
 
 ```{r}
- 
+#  
 annual2 <- st_as_sf(annual, coords = c("longitude", "latitude"),  remove = F, crs=crs_deg) #%>% st_transform(crs = crs_m)
-
-#need bbox w/ lat/long coordinates
-bbox <- st_bbox(st_transform(st_buffer(st_transform(monitoring_area_shp, crs_m), 10000), crs_deg))
-
-names(bbox) <- c("left", "bottom", "right", "top")
-
-map0 <- suppressMessages(get_stamenmap(
-  bbox = bbox, 
-  zoom = 11, 
-  maptype = "toner-lite" #has airport symbol
-  #maptype = "toner-background" #roads & water but no airport
-    ))
-#map0 %>% ggmap(darken = c(.4, "white"))
-
-  
-
+# 
+# #need bbox w/ lat/long coordinates
+# bbox <- st_bbox(st_transform(st_buffer(st_transform(monitoring_area_shp, crs_m), 10000), crs_deg))
+# 
+# names(bbox) <- c("left", "bottom", "right", "top")
+# 
+# map0 <- suppressMessages(get_stamenmap(
+#   bbox = bbox, 
+#   zoom = 11, 
+#   maptype = "toner-lite" #has airport symbol
+#   #maptype = "toner-background" #roads & water but no airport
+#     ))
+# #map0 %>% ggmap(darken = c(.4, "white"))
+# 
+#   
+# 
 unique_p <- distinct(annual[c("pollutant", "ufp_range_nm")])
 
-# non_ufp_p <- str_subset(string =  unique_p$pollutant, 
-#            pattern = "UFP", 
-#            negate = T) %>%
-#   #factor(levels = levels(annual$pollutant)) %>%
-#   sort()
-# 
-# 
-# ufp_p <- str_subset(string =  unique_p$pollutant, 
-#            pattern = "UFP", 
-#            negate = F) %>% unique()
-# 
+ 
 
 
 ```
@@ -1682,7 +1707,6 @@ ggsave(file.path(image_path, "map_non_ufp.png"),  height = 13, width = 11)
   * note, people wouldn't normally use screened PTRAKS (36-1,000 nm particles) to measure "UFPs"
 
   
-### -->  move PTRAK bins up
 
 ```{r}
 
@@ -1713,16 +1737,19 @@ ns_few_bins <- annual_bins %>%
 
 
 ptrak <- annual %>%
-  filter(grepl("pnc_", variable)) %>%
-  select(-c(pollutant2, ufp_range_nm)) %>%
-  spread(variable, value) %>%
-  mutate(pnc_20_36 = pnc_noscreen - pnc_screen) %>%
-  gather(variable, value, contains("pnc_")) %>%
+  filter(grepl("pnc_", variable)) %>% 
+  select(-c(pollutant2, ufp_range_nm,
+            Instrument
+            )) %>% 
+  spread(variable, value) %>% 
+  mutate(pnc_20_36 = pnc_noscreen - pnc_screen) %>%  
+  gather(variable, value, contains("pnc_")) %>% #View() 
   variable_relabel()
 
 
 ```
 
+ 
 
 ```{r}
 ggmap(ggmap = map0, darken = c(.5, "white")) +
@@ -1947,7 +1974,9 @@ Where $n$ is each individual pollutant, and $j$ is each individual pollutant mea
   
 total_pollution <- annual %>%
   #only keep 1 UFP measure
-  filter(!(grepl("UFP", pollutant) & ufp_range_nm != "20-1,000")) %>%
+  filter(!(grepl("UFP", pollutant) & !grepl("20-1,000", ufp_range_nm)
+             #ufp_range_nm != "20-1,000"
+           )) %>% # View()
   
   group_by(variable) %>%
   #standardize pollutant values
@@ -2260,7 +2289,7 @@ lms <- lms0 %>%
 ```
 
 
-### --> start here 
+ 
 
 
 ```{r, fig.height=10}
@@ -2282,7 +2311,7 @@ lms %>%
   labs(y = "Geocovariate",
        x = "Coefficient Estimate",
        shape= "non-buffer", 
-       col = "UFP Size (nm)"
+       col = "UFP Size"
        ) +
   theme(legend.position = "bottom",
         axis.text.y = element_text(size=12, #face="bold"
@@ -2290,15 +2319,15 @@ lms %>%
         ) #+ theme_grey()
 
 
-ggsave(file.path(image_path, "lasso.png"), height = 11, width = 10)
+ggsave(file.path(image_path, "SI", "lasso.png"), height = 11, width = 12)
 
 ```
 
-### --> why are some lms empty for some bins???
-
-### --> delete this here? 
-
 ```{r}
+### --> why are some lms empty for some bins???
+```
+
+```{r, eval=F}
 ## for bins
 lms_bins0 <- annual_bins_geo %>%
   group_by(Instrument = instrument, ufp_range_nm) %>%
@@ -2324,8 +2353,11 @@ lms_bins <- lms_bins0 %>%
 
 ```
 
-
+```{r}
 ### --> "237.1-316.2" bin is missing. Is it b/c only 223 sites have annual average for these bins? The largest bin has 281. All other bins have 309 sites. 
+
+```
+
 
 ```{r, fig.height=10, eval=F}
 
@@ -2358,13 +2390,16 @@ ggsave(file.path(image_path, "SI", "lasso_bins0.png"), height = 11, width = 12)
 ```
 
 
+```{r}
 ### --> "237.1-316.2" bin is missing. Is it b/c only 223 sites have annual average for these bins? The largest bin has 281. All other bins have 309 sites. 
+
+```
 
 * alternative to abvoe    
   * each bin has it's own scale since larger bins are associated with lower concentrations and so coefficient estimates are much smaller than those for smaller bins    
   * easier to see the many NS bins  
 
-```{r, fig.height=6}
+```{r, fig.height=6, eval=F}
 # each bin and instrument has its own facet
 
 for(i in seq_along(bin_instruments)) {
@@ -2609,14 +2644,15 @@ for (i in seq_along(density_covars)) {
                    paste0(substr(df$var[i], 5, nchar(df$var[i])), ".png")
                    ), 
          height = 11, width = 11)
-  
-  }
-
+   
+  } 
+ 
 ```
 
-same as above but for UFP bins
 
-```{r}
+```{r, eval=F}
+#same as above but for UFP bins
+
 
 for (i in seq_along(density_covars)) {
   #i=1
@@ -2641,7 +2677,7 @@ for (i in seq_along(density_covars)) {
                 ) + 
       labs(x = df$label[i],
            y = "Value",
-           col = "UFP Range (nm)"
+           col = "UFP Range"
            ) 
   
   print(p)
@@ -2660,14 +2696,15 @@ for (i in seq_along(density_covars)) {
 
 # Session Info
 
-```{r}
+```{r} 
 #citation("ggmap")
 
 sessionInfo()
 
 ```
-
-```{r}
+ 
+ 
+```{r, eval=F}
 # save package references to reference manager #https://bookdown.org/yihui/rmarkdown-cookbook/write-bib.html
 ##1.
 knitr::write_bib(c("broom", "colorspace", "cowplot", "fmsb", "forcats", "GGally", "ggpmisc", "ggpp", "ggpubr", "gstat", "knitr", "spData", "units" 

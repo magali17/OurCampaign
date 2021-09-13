@@ -294,11 +294,11 @@ variable_relabel <- function(dt, var = "variable"#, add_instrument=F
   
   dt <- dt %>%
     mutate(
-      ufp_range_nm = ifelse(var=="ns_total_conc", "10-420",
-                         ifelse(var=="pmdisc_number", "10-700",
-                                ifelse(var=="pnc_noscreen", "20-1,000",
-                                       ifelse(var=="pnc_screen", "36-1,000", 
-                                              ifelse(var=="pnc_20_36", "20-36",
+      ufp_range_nm = ifelse(var=="ns_total_conc", "10-420 nm",
+                         ifelse(var=="pmdisc_number", "10-700 nm",
+                                ifelse(var=="pnc_noscreen", "20-1,000 nm",
+                                       ifelse(var=="pnc_screen", "36-1,000 nm", 
+                                              ifelse(var=="pnc_20_36", "20-36 nm",
                                                      "-"
                                        ))))),
       #ufp_range_nm = factor(ufp_range_nm, levels = c("10-700", "10-420", "20-1,000", "36-1,000")),
@@ -314,7 +314,7 @@ variable_relabel <- function(dt, var = "variable"#, add_instrument=F
                           "pmdisc_number" = "UFP (pt/cm3)", #, 10-700 nm  
                           "pnc_noscreen" = "UFP (pt/cm3)", #, 20-1,000 nm
                           "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm  
-                          "pnc_20_50" = "UFP (pt/cm3)", #, 20-50 nm  
+                          "pnc_20_36" = "UFP (pt/cm3)", #, 20-50 nm  
       ),
       var = factor(var, levels = c("UFP (pt/cm3)", 
                                    "BC (ng/m3)", 

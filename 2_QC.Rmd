@@ -15,9 +15,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r}
-#test
-```
+ 
 
 ```{r, eval=F, echo=F}
 #update credentials to use token instead of old passowrd
@@ -1002,7 +1000,7 @@ ma200 %>%
 
 * CO: Tim G: tried resetting the instrument but had issues…so team just noted the response to the span gas. Both langans didn’t respond well. 
 
-* see a lag that occurs in instrument response to a true reference concentration when looking at time series plots. need to add a lag to start and end of each refernce reading.
+* see a lag that occurs in instrument response to a true reference concentration when looking at time series plots. need to add a lag to start and end of each reference reading.
 
 * nephs were reset based on the zero and span gas inputs if the readings were found to be out of spec (defined as more than +-0.05 e-5 away from the reference B-scat values). These were based on manual entries (not in the database as of 6/11/21). These manually recorded  calibration values could be just as valuable as the other calibration event results (logged and in the database on a 10-sec resolution).    
   * **Whether or not you may choose to calibrate earlier readings may depend on how much the nephs drifted away from the "true" concentration since the previous time it was calibrated and rest.** "As found" neph readings are pre-calibration and could be used to adjust neph readings during earlier times; whie "as set" neph readings are post-calibration after the instrument has been resest such that we trust that the instrument is within spec (+-0.05e-5).    
@@ -1170,7 +1168,7 @@ calibrations <- calibrations_table0 %>%
     !(instrument_id == "PMSCAN_5" & time > "2019-10-02 14:04" & time < "2019-10-02 14:10:10"),
    
     # the filter on/off times seem at these times. will do some trimming
-        ### --> also remove large 13:09 spike??
+        ### --> also remove large 13:09 spike 
     !(instrument_id %in% c("PMPT_94", "PM25_176", "PMSCAN_5") & runname == "2020-01-13_LABC" & 
       (time < "2020-01-13 13:08:00" | time > "2020-01-13 13:13:00")),
       ## these few readigns look unstable and diff from previous readings - filter was not on long enough?
@@ -1277,7 +1275,7 @@ calibration_medians %>%
    * A no intercept model for new NO2_2 is probably best b/c NO2 is constantly resetting to 0...so the intercept should be correct.     
     * the database shows 0, then span gas, then another 0. 
 * no need to do for CO2 instruments b/c these were reset after calibrations based on the gas level
-* ? probably no need to do this for nephs b/c they were reset if values were different from what was expected based on using 99.99% CO2 gas (~2.14e-5 at Temp = 293K)
+* probably no need to do this for nephs b/c they were reset if values were different from what was expected based on using 99.99% CO2 gas (~2.14e-5 at Temp = 293K)?
  
 * the calibration curve will use our sensor as the dependent variable and the true concentration as the independent variable so that the error term is estimated for our sensor. The MOVUP team has seen differences when things are done the other way (how you may traditionally dot his). Thus, we want to model:
 
@@ -1333,21 +1331,23 @@ calibration_curves <- rbind(no2_2_calib_curves, no2_1_and_co_calib_curves) %>%
   ungroup() %>%
   select(variable, instrument_id, runname, date, term, estimate) %>%  
   spread(term, estimate) %>%
-  rename(intercept = "(Intercept)") %>%
+  rename(intercept = "(Intercept)",
+         slope = conc
+         ) %>%
   mutate(
     # no2_2 has intercept of 0, though it's not estimated in lm
     intercept = ifelse(is.na(intercept), 0, intercept),
     date = as.Date(date)     
          ) %>%
   # #only include times when 'conc' can be estimated b/c > 1 concentrations used
-  drop_na(conc)
+  drop_na(slope)
 
 ```
 
 ```{r}
 # summarize calibation curves
 calibration_curves %>%
-  gather("term", "estimate", intercept, conc) %>%
+  gather("term", "estimate", intercept, slope) %>%
   group_by(variable, instrument_id, term) %>%
   variable_relabel() %>%
   summarize(
@@ -1447,7 +1447,7 @@ dt <- dt %>%
 
 ## Zero checks
 
-* **If instruments report readings near 0 and the noise is small (compared to a low background level?), we may not need to do anything to adjust particle readings** 
+* **If instruments report readings near 0 and the noise is small (compared to a low background level), we may not need to do anything to adjust particle readings** 
 
 
 * this is mainly for particle instruments, but may include some gas instruments that were checked with zero air
@@ -1504,7 +1504,7 @@ for(i in seq_along(pt_instrument_ids)) {
 
 ```{r}
 
-#what is a low reading?
+#a "low" reading
 low_q <- 0.05
 
 low_value <- readRDS(file.path("Data", "Output",  "stops_distribution_table.rda")) %>%
@@ -1611,7 +1611,7 @@ calibrations %>%
 ```
 
 
-* don't see temporal trends to suggest shifting instrument readings over time?
+* don't see temporal trends to suggest shifting instrument readings over time 
 
 ```{r}
 print("2-min median instrument readings during zero checks")
@@ -1733,14 +1733,7 @@ calibrations %>%
 ```
 
 
-### --> If readings are not near 0 or the noise is large, ask Edmund Elena what we should do about specific instrument. adjust backwards since these are not adjusted like the gas instruments are otherwise? 
-
-```{r}
-
-
-```
-
-
+ 
 
 
 
@@ -2011,8 +2004,7 @@ ns_stops2 <- dt_stops2 %>%
   left_join(ns_stops)
 
 
-### --> need this dataset later? 
-
+ 
 #keep approved stop data, but see raw values
 dt2 <- dt_stops2 %>%
   distinct(date, location, instrument_id) %>%
@@ -2039,7 +2031,7 @@ t2 <- dt_stops2 %>%
 
 left_join(t1, t2) %>%
   mutate(stops_diff = dt_stops - dt_stops2 ) %>%
-  kable(caption = "stops dropped b/c readings: 1. outside instruemtn range, 2. NanoScans and non-screened P-TRAKS readings < 300 pt/cm3, 3. screened P-TRAKS readings < 100 pt/cm3. This table is almost identical to the final table, other than for CO2 - readings are dropped late rb/c they are different from other instrument readings?") %>%
+  kable(caption = "Stops before and after updating data. stops were dropped b/c: 1. readings were outside instruemtn range, 2. NanoScans and non-screened P-TRAKS readings < 300 pt/cm3, 3. screened P-TRAKS readings < 100 pt/cm3. This table is almost identical to the final table, other than for CO2 - readings are dropped late rb/c they are different from other instrument readings?") %>%
   kable_styling()
 
 ```
@@ -2240,7 +2232,7 @@ t2 <- dt_stops3 %>%
 
 left_join(t1, t2) %>%
   mutate(stops_diff = dt_stops2 - dt_stops3) %>%
-  kable(caption = "backup CO2 readings are dropped b/c they are different from collocated backup instrument. # of stops is the same b/c the primary instrumetn will be used.") %>%
+  kable(caption = "Stops before and after updating data. backup CO2 readings are dropped b/c they are different from collocated backup instrument. # of stops is the same b/c the primary instrumetn will be used.") %>%
   kable_styling()
 
 ```
@@ -2554,7 +2546,7 @@ ggsave(file.path(image_path, "SI", "collocations.png"), height=9, width = 8)
 * Note from Tim G: "...the variation between the NanoScans may be different in different size bins, so you might want to do a size-specific correction, depending on the data that you will use in subsequent analysis"
 
 ```{r, echo=T}
-# ? right?
+#  
 drop_ns3 <- ymd("2020-02-01")
 
 ```
@@ -2991,7 +2983,7 @@ ns_stops3 <- ns_stops2 %>%
     value = ifelse(grepl("PMSCAN_3", instrument_id) & date < drop_ns3_v2, 
                    (value_c1-int)/slope,
                    value_c1),
-    # ? no calib curves for a few days ?? use non-calibrated values in this case. the adjustment is small either way.
+    # no calib curves for a few days ? use non-calibrated values in this case. the adjustment is small either way.
     value = ifelse(is.na(value), value_c1, value)
     ) %>%
   select(-c(int, slope))
@@ -3011,7 +3003,7 @@ t2 <- dt_stops4 %>%
 
 left_join(t1, t2) %>%
   mutate(stops_diff = dt_stops3 - dt_stops4) %>%
-  kable(caption = "all backup CO2 readings are dropped b/c they appear to be unreliable") %>%
+  kable(caption = "Stops before and after updating data. all backup CO2 readings are dropped b/c they appear to be unreliable") %>%
   kable_styling()
 
 ```
@@ -3916,19 +3908,11 @@ fieldnotes2 <- fieldnotes %>%
   * comapre instrument readings to nearby stops (i.e., stations in the same air shed)     
     * this may be misleading in our case b/c we can smooth out 2-min/instant readings, which may correctly show very different readings?   
 
-### Citing packages
-
-```{r}
-# citation() # R
-# citation("DBI")  
-#citation("RMariaDB")  
-
-```
-
+ 
 # Session Info
 
 ```{r}
-citation("ggmap")
+#citation("ggmap")
 
 sessionInfo()
 
