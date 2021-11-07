@@ -164,8 +164,9 @@ monitoring_area_shp2 <- routes_shp %>%
   st_union(r6_south) %>%
   st_union(r7_north)
 
-saveRDS(monitoring_area_shp2, file.path("Data", "Output", "GIS", "monitoring_area_shp2.rda"))
+saveRDS(monitoring_area_shp2, file.path("Data", "Output", "GIS", "monitoring_area_shp.rda"))
 
+st_write(monitoring_area_shp2, file.path("Data", "Output", "GIS", "monitoring_area.shp"))
 
 water_shp <- read_sf(file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles", "Other features", "Water", "DNR_Hydrography__Water_Bodies", "DNR_Hydrography__Water_Bodies.shp")) %>%
   st_transform(project_crs)
@@ -179,12 +180,16 @@ water_shp1 <- water_shp %>%
 
 saveRDS(water_shp1, file.path("Data", "Output", "GIS", "water_nearby_shp.rda"))
 
+st_write(water_shp1, file.path("Data", "Output", "GIS", "water_nearby.shp"))
+
+
 # shapefile of monitoring land (not including water)
 monitoring_land <- st_difference(monitoring_area_shp2,
                       st_union(water_shp1)
                        )  
 
 saveRDS(monitoring_land, file.path("Data", "Output", "GIS", "monitoring_land_shp.rda"))
+st_write(monitoring_land, file.path("Data", "Output", "GIS", "monitoring_land.shp"))
 
 ```
 

@@ -1817,7 +1817,7 @@ dt %>%
 ```
 
 
-# Calculate Site medians (for each instrument)
+# Calculate Site medians/means (for each instrument)
 
 
 ```{r}
@@ -1858,10 +1858,31 @@ dt_stops <- dt %>%
   mutate(time = min(time)) %>%  
    group_by(runname, date, time, location, stop_id, instrument_id, variable, primary_instrument) %>%
   summarize(
+    mean_value = mean(value),
     value = median(value),
     value_raw = median(value_raw)
   ) %>%
   ungroup()
+
+```
+
+```{r, eval=F}
+# check that mean and median values are different
+dt_stops %>%
+  mutate( diff = mean_value - value ) %>%
+  group_by(variable) %>%
+  summarize(
+    min = min(diff),
+    mean = mean(diff),
+    max = max(diff)
+  )
+   
+dt_stops %>%
+  ggplot(aes(y=mean_value, x=value)) + 
+  facet_wrap_equal(~variable, scales="free") + 
+  geom_point(alpha=0.2) +
+  geom_abline(slope = 1, intercept = 0) + 
+  labs(x = "median_value ('value')")
 
 ```
 
@@ -1876,7 +1897,8 @@ ns_stops <- ns0 %>%
   mutate(time = min(time)) %>%  
    group_by(runname, date, time, location, stop_id, instrument_id, variable, primary_instrument) %>%
   summarize(
-    value = median(value),
+    mean_value = mean(value),
+    value = median(value)
   ) %>%
   ungroup()
 
@@ -1893,7 +1915,8 @@ trh_stops <- trh0 %>%
   mutate(time = min(time)) %>%  
    group_by(runname, date, time, location, stop_id, instrument_id, variable, primary_instrument) %>%
   summarize(
-    value = median(value),
+    mean_value = mean(value),
+    value = median(value)
   ) %>%
   ungroup()
 
@@ -1990,7 +2013,7 @@ dt_stops2 <- dt_stops %>%
     #neph has no max. need a number to avoid an error
     mutate(Max = ifelse(is.na(Max), 9999999, Max)) %>%  
     #drop values outside the expected instrument range
-  filter(value >= Min, value <= Max)  %>%
+  filter(value > Min, value < Max)  %>%
   #drops 3 UFP values < 300
   filter(
     !(variable %in% c("ns_total_conc", "pnc_noscreen") & value < min_tot_ufp ),
@@ -2964,7 +2987,10 @@ dt_stops4 <- dt_stops3 %>%
                                   ifelse(grepl("neph", variable), value_c1*neph_slope + neph_int,
                                          # value not calibrated a second time
                                          value_c1
-                      )))))
+                      ))))),
+    
+    mean_value = ifelse(grepl("neph", variable), mean_value*bscat_unit_conv*neph_slope + neph_int,
+                          mean_value )
   )
 
 
@@ -3217,7 +3243,9 @@ dt_stops3_colo_a <- dt_stops5 %>%
     ) %>%  
   #drop seconds from time stamp (for DOE merging). change default tz of UTC to LA
   mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz)) %>%
-  select(-c(instrument_id, primary_instrument, value_c1, value_raw)) %>%
+  select(-c(instrument_id, primary_instrument, value_c1, value_raw,
+            mean_value
+            )) %>%
   spread(variable, value) %>%  
   arrange(time)  %>%  
   #rename pollutants
@@ -3243,7 +3271,9 @@ dt_stops3_colo_b <- dt_stops5 %>%
     ) %>% 
   #drop seconds from time stamp (for DOE merging). change default tz of UTC to LA
   mutate(time = ymd_hm(format(time, format = "%Y-%m-%d %H:%M"), tz=mytz)) %>%
-  select(-c(instrument_id, primary_instrument, value, value_raw)) %>%
+  select(-c(instrument_id, primary_instrument, value, value_raw,
+            mean_value
+            )) %>%
   #usine neph, not pm2.5 estimates here
   spread(variable, value_c1) %>% 
   arrange(time)  %>%  
@@ -3696,16 +3726,73 @@ dt_stops6 <- dt_stops5 %>%
 ```
 
 
+
+
+```{r}
+#* what is a low-level concentration? for zero comparison plots above
+  
+stop_tb <- dt_stops6 %>%
+  #use original bscat units (not PM2.5 calibration) here
+  mutate(value = ifelse(variable== "neph_bscat", value_raw, value)) %>%
+  group_by(variable, #instrument_id
+           ) %>%
+  summarize(
+    N = n(),
+    Min = min(value),
+    Q05 = quantile(value, 0.05),
+    Q10 = quantile(value, 0.10),
+    Median = median(value),
+    Q90 = quantile(value, 0.90),
+    Q95 = quantile(value, 0.95),
+    Max = max(value)
+  ) %>%
+  ungroup()
+  
+#use in zero plots later
+saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rda"))
+
+```
+
+
+
 # Final Data 
 
 ```{r}
 # stop data 
 original_data <- dt_stops
-final_data <- dt_stops6
+
+final_data <- dt_stops6 %>%
+  select(-c(value_c1, value_raw)) %>%
+  rename(median_value = value)
 
 all_stops <- length(unique(final_data$stop_id)) #value is same for original_data. #9047
 
 ```
+
+
+```{r}
+# compare means vs medians
+print("mean vs median 2-min visit concentrations")
+
+final_data %>%
+  ggplot(aes(x=median_value, y=mean_value)) + 
+  facet_wrap_equal(~variable, scales="free") + 
+  geom_point(alpha=0.3) + 
+  geom_abline(slope = 1, intercept = 0, linetype=2, alpha=0.5) 
+
+final_data %>%
+  mutate(diff = mean_value - median_value) %>%
+  group_by(variable) %>%
+  summarize(
+    min = min(diff),
+    mean = mean(diff),
+    max = max(diff)
+  )
+   
+
+```
+
+
 
 ```{r}
 # second-level data
@@ -3787,30 +3874,6 @@ paste0(round(71131/(8*all_stops)*100, 2), "%")
 
 
 
-```{r}
-#* what is a low-level concentration? for zero comparison plots above
-  
-stop_tb <- final_data %>%
-  #use original bscat units (not PM2.5 calibration) here
-  mutate(value = ifelse(variable== "neph_bscat", value_raw, value)) %>%
-  group_by(variable, #instrument_id
-           ) %>%
-  summarize(
-    N = n(),
-    Min = min(value),
-    Q05 = quantile(value, 0.05),
-    Q10 = quantile(value, 0.10),
-    Median = median(value),
-    Q90 = quantile(value, 0.90),
-    Q95 = quantile(value, 0.95),
-    Max = max(value)
-  ) %>%
-  ungroup()
-  
-#use in zero plots later
-saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rda"))
-
-```
 
 
 
@@ -3818,10 +3881,13 @@ saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rd
 
 ## Save data 
 
+
 ```{r, }
 # median stop data 
 ## units: nephs read bscatx10^-4 (similar to DOE). 
 saveRDS(final_data, file.path("Data", "Output", "stop_data.rda"))
+write.csv(final_data, file.path("Data", "Output", "stop_data.csv"), row.names = F)
+
 
 # #second data
 ## no need to save this if nothing changes really
