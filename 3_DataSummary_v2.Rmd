@@ -154,7 +154,7 @@ stops0.1 <- stops0 %>%
   left_join(stop_no) %>%
   # add other labels/temporal variables
   mutate(
-    variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
+    #variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
     day = wday(time,label = T, week_start = 1),
     hour = hour(time),
     pollutant = variable,

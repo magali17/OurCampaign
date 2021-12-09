@@ -3753,9 +3753,11 @@ saveRDS(stop_tb, file = file.path("Data", "Output", "stops_distribution_table.rd
 
 ```
 
-
-
 # Final Data 
+
+### --> why is there no mean_value ???
+
+
 
 ```{r}
 # stop data 
@@ -3763,7 +3765,9 @@ original_data <- dt_stops
 
 final_data <- dt_stops6 %>%
   select(-c(value_c1, value_raw)) %>%
-  rename(median_value = value)
+  rename(median_value = value) %>%
+  #relabel neph PM2.5 for clarification
+  mutate(variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable))
 
 all_stops <- length(unique(final_data$stop_id)) #value is same for original_data. #9047
 
