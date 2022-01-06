@@ -25,6 +25,8 @@ source("0_Functions.R")
 
 use_cores <- 4
 
+image_path <- file.path("..", "Manuscript", "Images")
+
 ###########################################################################################
 # UPLOAD DATA
 ###########################################################################################
@@ -44,11 +46,22 @@ cov_test <- readRDS(file.path("..", "..", "ACT HEI Supp", "act_hei_aim1a", "Outp
 
 annual <- stops0 %>%
   group_by(variable, location) %>%
+  
+  #windsorize median values - replace min & max w/ 2nd smallest or largest value, respectively
+  mutate(
+    wind_median_value = ifelse(median_value == max(median_value), max(median_value[median_value!=max(median_value)]),
+                               ifelse(median_value == min(median_value), min(median_value[median_value!=min(median_value)]),
+                                      median_value
+                                      ))) %>% 
+  #filter(location == "MS0505", variable == "ma200_ir_bc1") %>% 
+  #arrange(median_value) %>% View()
   summarize(
     mean_of_medians = mean(median_value),
     median_of_means = median(mean_value),
     median_of_medians = median(median_value),
-    mean_of_means = mean(mean_value)
+    mean_of_means = mean(mean_value),
+    
+    mean_of_wind_medians = mean(wind_median_value)
   ) %>%
   gather("annual", "value", contains(c("mean", "median"))) %>%
   ungroup()
@@ -65,14 +78,57 @@ annual <-rbind(select(annual_train, all_of(keep_names)), select(annual_test, all
 
 saveRDS(annual, file.path("Data", "Output", "annual.rda"))
 
+
+
+###########################################################################################
+# TEST - see influential points
+###########################################################################################
+
+# high_annual_sites <- annual %>%
+#   filter(annual == "mean_of_medians",
+#          grepl("pnc|pmdisc|ns_total", variable)
+#          ) %>%
+#   group_by(variable)%>%
+#   filter(value > quantile(value, 0.98)) %>% 
+#   arrange(variable, desc(value)) %>%
+#   rename(annual_value = value)
+#   #select(variable, location, annual_value = value)
+# 
+# #MS0229
+# 
+# # stops0 %>%
+# #   filter(grepl("pmdisc", variable),
+# #          #grepl("pnc|pmdisc|ns_total", variable),
+# #          location %in% c("MS0229")
+# #          ) %>% View()
+# 
+# 
+# # most sites w/ high UFP readings are influenced by 1+ very high reading
+# high_annual_sites %>%
+#   left_join(stops0) %>% # View()
+# 
+#   ggplot(aes(y=location, x=median_value, col=annual_value)) +
+#   facet_wrap(~variable, scales="free") +
+#   geom_point(alpha=0.3) +
+#   labs(x = "2-min Median",
+#        col = "Annual mean\n of median",
+#        title = "2-min medians for sites with high annual averages"
+#        )
+# ggsave(file.path(image_path, "Temp", "Windsorized", "stop_medians_of_high_annual_avgs.png"), height = 6, width = 6)
+
+
 ###########################################################################################
 # COMMON VARIABLES
 ###########################################################################################
 cov_names <- cov_train %>%
-  select(log_m_to_a1:last_col()) %>%
+  select(log_m_to_a1:last_col(),
+         # #test, see how much the bus covariate makes a difference. # not much. 
+         # -contains(c("bus_", "m_to_bus"))
+         ) %>%
   names()
 
-pls_comp_n <- 2
+pls_comp_n <- 3 #note, that PM2.5 & no2 did a tiny bit better w/ 4 PLS components
+save(pls_comp_n, file = file.path("Data", "Output", "Objects", "pls_comp_n.rda"))
 
 #k-folds for CV
 k <- 10
@@ -121,7 +177,7 @@ annual_train <- add_random_fold(annual_train)
 # pls_comp_n. = pls_comp_n
 
 
-uk_pls <- function(new_data, modeling_data, cov_names. = cov_names, pls_comp_n. = pls_comp_n) {
+uk_pls <- function(new_data, modeling_data, cov_names. = cov_names, pls_comp_n. = pls_comp_n, fn_result = "predictions") {
   
   lat_long_crs <- 4326
   #lambert projection for UK model
@@ -170,7 +226,17 @@ uk_pls <- function(new_data, modeling_data, cov_names. = cov_names, pls_comp_n. 
   predictions <- new_data %>% #select(variable, location, annual, value) %>%
     mutate(prediction = uk_model$var1.pred)
   
-  return(predictions)
+  if(fn_result == "predictions") {return(predictions)}
+  if(fn_result == "models") {
+    result = list(
+      variable = first(modeling_data$variable),
+      annual = first(modeling_data$annual),
+      pls_model = pls_model, 
+      variogram_model = m.uk
+      )
+    return(result)
+    }
+  
   
 }
 
@@ -236,10 +302,23 @@ test_predictions <- mclapply(group_split(distinct(annual_test, variable, annual)
   mutate(out_of_sample = "test") %>%
   select(all_of(common_names))
 
+#same as above but returns the pls & variogram model used in UK with the training-validation set
+train_validation_models <- mclapply(group_split(distinct(filter(annual_test, annual=="mean_of_medians"), variable, annual), variable, annual), 
+                             function(x) {
+                               modeling_data0 = right_join(annual_train, x)
+                               new_data0 = right_join(annual_test, x)
+                               
+                               uk_pls(new_data = new_data0, modeling_data = modeling_data0, fn_result = "models")
+                             }, mc.cores = use_cores
+                             )
+
+saveRDS(train_validation_models, file.path("Data", "Output", "Predictions", "train_validation_models.rda"))
+
+
 # combine predictions
 predictions <- rbind(cv_predictions, test_predictions) #%>% select(variable, location, annual, value, prediction, out_of_sample) 
 
-saveRDS(predictions, file.path("Data", "Output", "Predictions", "location_predictions.rda"))
+saveRDS(predictions, file.path("Data", "Output", "Predictions", "monitoring_location_predictions.rda"))
 
 ##################################################################################################
 # MODEL EVALUATION
@@ -279,21 +358,96 @@ model_performance <- mclapply(group_split(predictions, variable, annual, out_of_
   bind_rows() %>%
   mutate_if(is.numeric, ~round(., 2))
 
+# table
+model_performance %>%
+  filter(annual %in% c("mean_of_medians", "mean_of_wind_medians")) %>%
+  select(-c(#annual, 
+            no_sites)) %>%
+  variable_relabel() %>%
+  
+  kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
+        col.names = c("Pollutant", "Annual", "Out-of-Sample Set", "RMSE", "MSE-based R2", "Regression-based R2", "UFP Size (nm)")
+        ) %>%
+  kable_styling()
+
+#plo
+
+##################################################################################################
+# TEST - COMPARE MODEL PERFORMANCES
 
 model_performance %>%
+  filter(annual %in% c("mean_of_medians", "mean_of_wind_medians")) %>%
+  variable_relabel() %>%
+  gather(performance, value, MSE_based_R2, RMSE) %>%
+  
+  ggplot(aes(x=out_of_sample, y=value, col=annual, shape=ufp_range_nm)) + 
+    facet_wrap(~variable+performance, scales="free") + 
+    geom_point() + 
+  labs(title = "model performance of mean of medians vs mean of windsorized medians")
+
+ggsave(file.path(image_path, "Temp", "Windsorized", "model_performance.png"), height = 8, width = 11)
+  
+  
+##################################################################################################
+# SAVE FULL DATASET FOR PREDICTION LATER
+##################################################################################################
+
+model_performance %>%
+  #filter(annual %in% c("mean_of_medians", "mean_of_wind_medians")) %>%
+  #select(-"reg_based_R2") %>%
+  write.csv(., file.path("Data", "Output", "Predictions", "model_performance.csv"), row.names = F)
+
+
+
+
+##################################################################################################
+# TEST
+##################################################################################################
+# summarize model performance
+
+test <- read.csv(file.path("Data", "Output", "Predictions", "model_performance.csv"))
+
+test %>%
   filter(annual == "mean_of_medians") %>%
   select(-c(annual, no_sites)) %>%
   variable_relabel() %>%
   
   kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
         col.names = c("Pollutant", "Out-of-Sample Set", "RMSE", "MSE-based R2", "Regression-based R2", "UFP Size (nm)")
-        ) %>%
+  ) %>%
   kable_styling()
+  # filter(annual == "mean_of_medians") %>%
+  # mutate(
+  #   variable = ifelse(grepl("ns_total|pmdisc_|screen", variable), "ufp", as.character(variable))
+  # ) %>%
+  # group_by(variable) %>%
+  # summarize(
+  #   RMSE = paste(range(RMSE), collapse = " - "),
+  #   MSE_based_R2 = paste(range(MSE_based_R2), collapse = " - ")
+  # )
 
 
 ##################################################################################################
-# SAVE FULL DATASET FOR PREDICTION LATER
-##################################################################################################
+# test %>%
+#   filter(annual == "mean_of_medians") %>%
+#   select(-c("annual", "reg_based_R2", "no_sites")) %>%
+#   variable_relabel() %>%
+#   # mutate(
+#   #   variable = factor(variable, levels = c("UFP (pt/cm3)",
+#   #                                "BC (ng/m3)",
+#   #                                "Neph (bscat/m)",  "PM2.5 (ug/m3)",
+#   #                                "NO2 (ppb)",
+#   #                                "CO2 (ppm)",
+#   #                                "CO (ppm)"
+#   #                                )
+#   # )) %>%
+#   mutate(RMSE = round(RMSE, 1))  %>%
+#   kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
+#         col.names = c("Pollutant", "Out-of-Sample Set", "RMSE", "MSE-based R2", "UFP Size (nm)")
+#   ) %>%
+#   kable_styling()
 
-write.csv(model_performance, file.path("Data", "Output", "Predictions", "model_performance.csv"), row.names = F)
+
+
+
  

@@ -1,0 +1,72 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+* list of packages used for this paper 
+
+```{r}
+# 1_monitoringarea.rmd
+pacman::p_load(knitr, kableExtra, 
+               ggpubr, tidyverse,
+               # for kaya - mapping
+               ggmap, sf, #mapping
+               ggspatial, #mapping, adding scales, N arrows...
+               spData, # us_states data - mapping WA state
+               cowplot, #layering ggplots. ggdraw(), draw_plot()
+               units #convert between e.g., m to km
+               )  
+
+# 2_QC.Rmd
+pacman::p_load(knitr, kableExtra, 
+               ggpubr, tidyverse,
+               ggrepel, #geom_label_repel
+               ggpmisc, #stat_poly_eq() # adds lm text to ggplots
+               #mapping...adding scales, N arrows
+               ggmap, sf, ggspatial, 
+               units, #convert between e.g., m to km
+               #time series data 
+               lubridate,
+               # modeling
+               broom ##tidy()
+               )    
+
+
+# 3_DataSummary.RMd
+pacman::p_load(knitr, kableExtra, broom,
+               ggpubr, tidyverse,
+               ggrepel, #geom_label_repel
+               ggmap, sf, ggspatial, #mapping...adding scales, N arrows
+               ggrepel, #avoid overlapping labels
+               units, #convert between e.g., m to km
+               #time series data 
+               lubridate,
+               
+               fmsb, #percentile()
+               GGally, #ggpairs()
+               VCA, #anovaVCA()
+               gstat, #variogram()
+               ggpmisc, # for ggplot() geom="table"
+               units, #convert between e.g., m to km
+               colorspace #create color palates that "look good". e.g., rainbow_hcl(3)
+               )   
+
+
+```
+
+
+```{r}
+sapply(sessionInfo()$otherPkgs, function(x) x[c("Package", "Version")] %>% unlist()) %>% 
+  t() %>% as.data.frame() %>%
+  mutate(Version = paste0(" (v. ", Version, ")")) %>%
+  unite(Package, Package, Version, sep = "") %>%
+  arrange(Package) %>%
+  pull(Package) %>%
+  paste(., collapse = ", ")
+
+```
+

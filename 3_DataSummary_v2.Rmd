@@ -34,13 +34,13 @@ knitr::opts_chunk$set(echo = F,
                       fig.height = 6, fig.width = 10
                       )  
 
-# # Clear workspace of all objects and unload all extra (non-base) packages
-# rm(list = ls(all = TRUE))
-# if (!is.null(sessionInfo()$otherPkgs)) {
-#   res <- suppressWarnings(
-#     lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
-#       detach, character.only=TRUE, unload=TRUE, force=TRUE))
-# }
+# Clear workspace of all objects and unload all extra (non-base) packages
+rm(list = ls(all = TRUE))
+if (!is.null(sessionInfo()$otherPkgs)) {
+  res <- suppressWarnings(
+    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+      detach, character.only=TRUE, unload=TRUE, force=TRUE))
+}
 
 pacman::p_load(knitr, kableExtra, broom,
                ggpubr, tidyverse,
@@ -85,13 +85,14 @@ load(file.path("Data", "Output", "common_vars.rda"))
 
 #stop data
 sec0 <- readRDS(file.path("Data", "Output", "second_data.rda"))
-stops0 <- readRDS(file.path("Data", "Output", "stop_data.rda"))
+stops0 <- readRDS(file.path("Data", "Output", "stop_data.rda")) %>%
+  select(-mean_value) %>% rename(value = median_value)
 ns0 <-readRDS(file.path("Data", "Output", "ns_stop_data.rda"))
 trh0 <-readRDS(file.path("Data", "Output", "trh_stop_data.rda"))
 
 
 #geocovariates
-geo <- readRDS(file.path("~", "Documents","School","PhD", "Dissertation", "TRAP R Project","Data", "Aim 2", "Geocovariates", "cov_mm_preprocessed.rda"))
+geo <- readRDS(file.path("~", "OneDrive - UW", "Documents","School","PhD", "Dissertation", "TRAP R Project","Data", "Aim 2", "Geocovariates", "cov_mm_preprocessed.rda"))
 
 ```
 
@@ -102,14 +103,14 @@ crs_m <- 32148
 crs_deg <- 4326 #WGS84. in decimal degrees
 
 #shapefiles
-monitoring_area_shp <- readRDS(file.path("Data", "Output", "GIS", "monitoring_area_shp2.rda")) %>%
+monitoring_area_shp <- readRDS(file.path("Data", "Output", "GIS", "monitoring_area_shp.rda")) %>%
   #convert from 4269 
   st_transform(crs_deg)
 
 ```
 
 ```{r}
-gis_path0 <- file.path("~", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles")
+gis_path0 <- file.path("~", "OneDrive - UW", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles")
 # project_crs <- 4326  #lat/long
 # m_crs <- 32148 #meters
 
@@ -130,8 +131,8 @@ ufp_20_36 <- stops0 %>%
   drop_na() %>%
   mutate(
     pnc_20_36_value = pnc_noscreen_value - pnc_screen_value,
-    pnc_20_36_value_c1 = pnc_noscreen_value_c1 - pnc_screen_value_c1,
-    pnc_20_36_value_raw = pnc_noscreen_value_raw - pnc_screen_value_raw
+    # pnc_20_36_value_c1 = pnc_noscreen_value_c1 - pnc_screen_value_c1,
+    # pnc_20_36_value_raw = pnc_noscreen_value_raw - pnc_screen_value_raw
   ) %>%
   gather("variable", "value", contains("pnc_")) %>%
   mutate(
@@ -261,7 +262,7 @@ instrument names
 instruments <- stops %>%
   distinct(variable, pollutant, pollutant2) %>%
   mutate(
-    Instrument = c("MA200", "SenseAir", "M903", "DiSCmini", "P-TRAK, Screen", "NanoScan", "CAPS", "P-TRAK")
+    Instrument = c("MA200", "Li-Cor", "M903", "DiSCmini", "P-TRAK, Screen", "NanoScan", "CAPS", "P-TRAK")
   )
 
 ```
@@ -299,6 +300,14 @@ non_ufp_p <- str_subset(string =  unique_pollutants,
 ufp_p <- str_subset(string =  unique_pollutants, 
            pattern = "UFP", 
            negate = F) %>% unique()
+
+
+pollutant_levels <-  c("UFP (pt/cm3), 10-420 nm", "UFP (pt/cm3), 10-700 nm", "UFP (pt/cm3), 20-1,000 nm", "UFP (pt/cm3), 36-1,000 nm", "BC (ng/m3)", "NO2 (ppb)", "PM2.5 (ug/m3)",  "CO2 (ppm)")
+
+pollutant_levels2 <-  c("UFP (pt/cm3)",  str_subset(string =  pollutant_levels, pattern = "UFP", negate = T))
+
+save(pollutant_levels, pollutant_levels2, file = file.path("Data", "Output", "Objects", "pollutant_levels.rda"))
+
 
 
 ```
@@ -1250,11 +1259,68 @@ var_df %>%
 
 ```
 
-* same as above, but modeling all UFP measures/instruments together, and including instrument in the model
+```{r}
+var_df %>%
+  gather(pollutant, percent, 'BC (ng/m3)':'UFP (pt/cm3), 36-1,000 nm') %>%
+  filter(Variable != "total") %>%
+  mutate(
+    variability = ifelse(Variable == "location", "spatial",
+                  ifelse(Variable == "error", "residual", "temporal")
+                  ),
+    variability = factor(variability, levels = c("residual", "temporal", "spatial"))
+  ) %>%
+  group_by(variability, pollutant) %>%
+  summarize(
+    percent = sum(percent)
+  ) %>%
+  spread(pollutant, percent) %>%
+  kable(caption = "total variability categorized", digits = 0) %>%
+  kable_styling()
+
+
+
+```
+
+
+plot
+
+```{r}
+
+
+```
+
+
+```{r}
+var_df %>%
+  #select(-c(contains(c("10-420", "10-700", "36-1,000")))) %>% 
+  gather(pollutant, percent, 'BC (ng/m3)':'UFP (pt/cm3), 20-1,000 nm') %>%
+  filter(Variable != "total") %>%
+  mutate(
+    Variable = factor(Variable, levels = c("error", "location", "season", "day", "hour")),
+    variability = ifelse(Variable == "location", "spatial",
+                  ifelse(Variable == "error", "residual", "temporal")
+                  ),
+    variability = factor(variability, levels = c("residual", "temporal", "spatial")),
+    pollutant = factor(pollutant, levels =pollutant_levels)
+    ) %>%
+  ggplot(aes(x=variability, y=percent, fill=Variable)) + 
+  facet_wrap(~pollutant) + 
+  geom_bar(stat = "identity") + 
+  labs(fill = "",
+       x = "Variability", y = "Percent (%)"
+       ) 
+
+
+ggsave(file = file.path(image_path, "anova.png"), height = 9, width = 9)                 
+
+```
+
+
 
 
 ```{r, eval=F}
-
+#* same as above, but modeling all UFP measures/instruments together, and including instrument in the model
+ 
 anovaVCA(value ~ location + day+ hour + season + ufp_range_nm,
            Data = as.data.frame(subset(stops, grepl("UFP", pollutant))))$aov.tab  %>% # 
     tidy() %>%
@@ -1371,7 +1437,9 @@ print("Annual average site concentrations")
   
 #boxplots
 annual %>%
-    mutate(ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)) %>%
+    mutate(ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm),
+           pollutant = factor(pollutant, pollutant_levels2)
+           ) %>%
 
   ggplot(aes(x=pollutant, y=value, fill=ufp_range_nm)) + 
   facet_wrap(~pollutant, scales= "free") + 
@@ -1381,7 +1449,7 @@ annual %>%
        fill = "UFP Range"
        )
 
-ggsave(file.path(image_path, "SI", "annual_avg.png"), height = 6, width = 7)
+ggsave(file.path(image_path, "annual_avg.png"), height = 6, width = 7)
 
 ```
 
@@ -1699,7 +1767,7 @@ for(i in seq_along(non_ufp_p)) {
 
 ggarrange(plotlist = p, ncol = 2, nrow = 2)
 
-ggsave(file.path(image_path, "map_non_ufp.png"),  height = 13, width = 11)
+ggsave(file.path(image_path, "SI", "map_non_ufp.png"),  height = 13, width = 11)
 
 ```
 
@@ -1807,7 +1875,7 @@ ggmap(ggmap = map0, darken = c(.5, "white")) +
        fill = ""
        ) 
 
-ggsave(file.path(image_path, "map_ptrak_tot_and_bins.png"),  
+ggsave(file.path(image_path, "SI", "map_ptrak_tot_and_bins.png"),  
        height = 7, width = 12
        )
 
@@ -2241,7 +2309,7 @@ split_cov_name <- function(dt, cov) {
 table of covariates used
 
 ```{r}
-geo_t <- read_csv(file.path("~", "Documents", "School", "PhD", "Dissertation", "TRAP R Project", "Output", "Aim 2", "Tables", "0. Geocovariates", "cov_descrip.csv")) %>%
+geo_t <- read_csv(file.path("~", "OneDrive - UW", "Documents", "School", "PhD", "Dissertation", "TRAP R Project", "Output", "Aim 2", "Tables", "0. Geocovariates", "cov_descrip.csv")) %>%
   #only include 2010 pop density
   filter(!Covariate %in% c("pop_s", "pop90_s"))
 

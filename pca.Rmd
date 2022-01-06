@@ -27,7 +27,8 @@ pacman::p_load(kableExtra,
                tidyverse,
                #pls, gstat, #variogram()
                sf,
-               pls, ggbiplot#, #PCA plots
+               #pls, 
+               ggbiplot#, #PCA plots
                #parallel
                )
 
@@ -72,34 +73,44 @@ monitoring_area <- readRDS(file.path("Data", "Output", "GIS", "monitoring_land_s
 # PCA
 ###########################################################################################
 
-pca1 <- prcomp(annual[keep_polluants], center = T, scale. = T , #rank. = 2
+pca1 <- prcomp(annual[keep_polluants], center = T, scale. = T, 
+               #rank. = 3
                )
-
-# add the values of each sample in terms of the principal components
-annual <- cbind(annual, pca1$x)
 
 #prop of variance explained
 summary(pca1)
 
-###########################################################################################
-
+# relabel
+rownames(pca1$rotation) <- pollutant_levels2
+  
 #The relationship (correlation or anticorrelation, etc) between the initial variables and the principal components
 pca_rotation <- pca1$rotation %>%
   as.data.frame( ) %>%  
   rownames_to_column() %>%
-  arrange(desc(abs(PC1)))
+  arrange(desc(abs(PC1)))  
 
 pca_rotation %>%
   kable(caption = "PCA pollutant rotation: the correlation between each pollutant and the principal component.") %>%
   kable_styling()  
 
-#plot
-ggbiplot(pca1, #labels=round(exp(annual$log_m_to_rr)/1000),
-         #plot different PC components
-         #choices=c(2,3)
-         )
 
-ggsave(file.path(image_path, "pc_plot.png"), width = 6, height = 6)
+#plot
+# ggbiplot()
+
+autoplot(pca1, scale = 0, loadings = TRUE, loadings.label = T) 
+
+# ggbiplot(pca1,  
+#          #loadings = TRUE, loadings.label = T  
+#          #plot different PC components
+#          #choices=c(2,3)
+#          )
+
+ggsave(file.path(image_path, "pca_plot.png"), width = 6, height = 6)
+
+## The values of each sample in terms of the principal components
+# pca1$x
+
+annual <- cbind(annual, pca1$x)
 
 ```
 
