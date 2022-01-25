@@ -1,5 +1,5 @@
 ---
-title: "Prediction Summary"
+title: "Campaign Predictions Summary"
 author: "Magali Blanco"
 date: ' `r Sys.time()` '
 output:
@@ -39,7 +39,8 @@ pacman::p_load(kableExtra,
   GGally, # ggpairs
   ggmap, sf, ggspatial, #mapping...adding scales, N arrows
   parallel,
-  pls
+  pls,
+  gstat # idw()
 )
 
 set.seed(1)
@@ -61,11 +62,9 @@ image_path <- file.path("..", "Manuscript", "Images")
 # 3 PLS components (or could be different)
 load(file.path("Data", "Output", "Objects", "pls_comp_n.rda"))
 load(file.path("Data", "Output", "Objects", "pollutant_levels.rda"))
-# e.g., "mean_of_wind_medians"
+# e.g., "mean_of_win_medians"
 load(file.path("Data", "Output", "Objects", "keep_averages.rda"))
-# #TEST
-# keep_averages <- "median_of_medians"
-
+ 
 # # monitoring 'locations' table
 # load(file.path("Data", "Original", "locations_table.rda"))
 
@@ -87,11 +86,29 @@ mm_cov <- filter(mm_cov0, location %in% unique(mm_predictions$location) )
 
 
 # grid predictions
-grid_predictions <- readRDS(file.path("Data", "Output", "Predictions", "grid", "grid_predictions.rda")) %>%  
+grid_predictions0 <- readRDS(file.path("Data", "Output", "Predictions", "grid", "predictions.rda")) 
+
+grid_predictions <- grid_predictions0 %>%  
   filter(annual == keep_averages,
          in_monitoring_area==TRUE) %>%
   select(-c(annual, in_monitoring_area)) %>%
   variable_relabel() 
+
+grid_predictions2 <- st_as_sf(grid_predictions, coords = c("longitude", "latitude"),  remove = F, crs=crs_deg)  
+
+
+# # for QGIS
+# grid_predictions0 %>%
+#   filter(annual == keep_averages) %>%
+#   select(-contains(c("key", "msa", "native_id", "annual"))) %>%
+#   spread(variable, prediction) %>%  
+#   st_as_sf(., coords = c("longitude", "latitude"),  remove = F, crs=crs_deg) %>%
+#   st_write(., file.path("Data", "Output", "Predictions", "grid", "monitoring_predictions.shp"),
+#          #delete file if already exists
+#            delete_layer=TRUE)
+
+
+
 
 # grid covariates
 grid_cov <- readRDS(file.path("Data", "Original", "Geocovariates", "dr0311_grid_covars.rda") )
@@ -99,15 +116,62 @@ grid_cov <- readRDS(file.path("Data", "Original", "Geocovariates", "dr0311_grid_
 # PLS U& variogram models from the training-validation dataset fit while predicting at test locations
 train_validation_models <- readRDS(file.path("Data", "Output", "Predictions", "train_validation_models.rda"))
 
+
+# model performance
+model_performance <- read.csv(file.path("Data", "Output", "Predictions", "model_performance.csv"))
+
+
 ######################################################################################################
 # mapping
 crs_m <- 32148
+
 crs_deg <- 4326 #WGS84. in decimal degrees
+## PROJ.4 string for crs_deg
+crs_deg_proj4 <- "+proj=longlat +datum=WGS84 +no_defs"
+
 
 #shapefiles
 monitoring_area_shp <- readRDS(file.path("Data", "Output", "GIS", "monitoring_area_shp.rda")) %>%
   #convert from 4269 
   st_transform(crs_deg)
+
+monitoring_land_shp <- readRDS(file.path("Data", "Output", "GIS", "monitoring_land_shp.rda")) %>%
+  #convert from 4269 
+  st_transform(crs_deg)
+
+
+```
+
+```{r}
+#need bbox w/ lat/long coordinates
+bbox <- st_bbox(st_transform(st_buffer(st_transform(monitoring_area_shp, crs_m), 10000), crs_deg))
+
+names(bbox) <- c("left", "bottom", "right", "top")
+
+map0 <- suppressMessages(get_stamenmap(
+  bbox = bbox, 
+  zoom = 11, 
+  maptype = "toner-lite" #has airport symbol
+  #maptype = "toner-background" #roads & water but no airport
+))
+
+## map labels
+map_x_labels <- c(seq(-122.5, -121.9, 0.2)) #0.2
+map_y_labels <- c(seq(47.2, 48, 0.2)) #%>% format(nsmall=1)
+
+
+
+
+unique_pollutants <- unique(grid_predictions2$variable) %>% sort()
+
+non_ufp_p <- str_subset(string =  unique_pollutants, pattern = "UFP", negate = T) %>%
+  sort()
+
+ufp_p <- str_subset(string =  unique_pollutants, pattern = "UFP", negate = F) %>%
+  sort()
+
+
+unique_pollutants0 <- unique(grid_predictions0$variable)
 
 ```
 
@@ -120,89 +184,60 @@ cov_names <- select(mm_cov, m_to_a1:last_col()) %>% names()
 
 ```
 
-
-# Correlations
-
 ```{r}
+# Lasso fn runs a lasso regression model and returns a list: a) covariate estimates: b) lambda
 
-cor_df <- mm_predictions %>%
-  mutate(
-  pollutant = if_else(grepl("UFP", variable),
-                      paste0(variable, "\n", ufp_range_nm),
-                      as.character(variable)
+lasso_fn <- function(dt, x_names, y_name, family. = "gaussian", lambda. = "") {
+  
+  pacman::p_load(glmnet)
+  
+  x <- model.matrix(as.formula(paste(y_name, "~", 
+                                     paste(x_names, collapse = " + "))
+  ), dt)[, -1]
+  
+  #replace y "name" w/ actual data
+  y <- dt[[y_name]]   
+  
+  #select lambda through CV if not supplied
+  if(lambda. == ""){
+    cv.out <- cv.glmnet(x = x,
+                        y = y, 
+                        alpha=1, 
+                        family= family., 
+                        standardize=T)
+    
+    lambda. <- cv.out$lambda.min
+  }
+  
+  # run Lasso
+  lasso.m <- glmnet(x = x,
+                    y = y, 
+                    alpha = 1, 
+                    family= family.,  
+                    standardize = T)
+  
+  #save coefficient estimates
+  lasso_coef <- predict(lasso.m, 
+                        type= "coefficients",  
+                        s= lambda.)[1:(ncol(x)+1),] %>%
+    as.data.frame() %>%
+    rownames_to_column() %>%
+    rename(cov = rowname,
+           coef = ".") %>%
+    #keep coefficients that are not 0 or intercept values
+    filter(coef != 0,
+           cov != "(Intercept)")
+  
+  
+  results <- list(results = lasso_coef,
+                  lambda = lambda.
   )
-  ) %>%    
-  select(pollutant, location, prediction) %>%   
-  spread(pollutant, prediction) %>%  
-  select(contains(c("UFP", "BC", "NO2", "PM2.5", "CO2")))
-
-```
-
-```{r}
-
-#function colors upper panel by correlation value
-# source: https://stackoverflow.com/questions/45873483/ggpairs-plot-with-heatmap-of-correlation-values 
-
-color_cor <- function(data, mapping, method="p", use="pairwise", alpha=0.5, ...){
-  #GGally, #ggpairs()
-  pacman::p_load(GGally)
   
-  # grab data
-  x <- eval_data_col(data, mapping$x)
-  y <- eval_data_col(data, mapping$y)
+  return(results)
   
-  # calculate correlation
-  corr <- cor(x, y, method=method, use=use)
-  
-  # calculate colour based on correlation value
-  # Here I have set a correlation of minus one to blue, 
-  # zero to white, and one to red 
-  # Change this to suit: possibly extend to add as an argument of `my_fn`
-  colFn <- colorRampPalette(c("blue", "white", "red"), interpolate ='spline')
-  fill <- colFn(100)[findInterval(corr, seq(-1, 1, length=100))]
-  
-  ggally_cor(data = data, mapping = mapping, 
-             #don't include stars if correlations "sign"
-             stars = FALSE,
-             digits=2,
-             ...) + 
-    theme_void() +
-    theme(panel.background = element_rect(fill=alpha(fill, alpha)))
 }
- 
 ```
 
-plot 
-
-```{r}
-print("Annual average pollutant prediction correlations")
-
-# correlation plot
-ggpairs(cor_df, 
-        upper = list(continuous = color_cor),
-        lower = list(continuous = wrap("smooth_loess", alpha=0.2)),
-) + #scale_x_continuous(labels = scales::scientific) 
-  scale_x_continuous(guide = guide_axis(check.overlap = TRUE))
-
-ggsave(file.path(image_path, "prediction_correlations.png"), height = 11, width = 11)
-
- 
-```
-
-
-
-```{r, eval=F}
-#table 
-
-#range of correlations 
-
-cor(cor_df, method="p", use="pairwise") %>%
-  as.data.frame() %>%
-  mutate_all(~.^2) %>%
-  kable(caption = "Interpollutant regression-based R2 values", digits = 2) %>%
-  kable_styling()
-
-```
 
 # PLS Model Specifics 
 
@@ -309,7 +344,7 @@ all_pls_loadings  %>%
        ) +
   theme(legend.position = "right") 
 
-ggsave(file.path(image_path, "pls_loadings.png"), width = 8, height = 11)
+ggsave(file.path(image_path, "SI", "pls_loadings.png"), width = 8, height = 11)
 
 
 ```
@@ -331,43 +366,495 @@ mm_predictions %>%
   theme(aspect.ratio = 1) + 
   labs(x = "Estimate", y= "Prediction")
   
-ggsave(file.path(image_path, "scatter_plot.png"), width = 8, height = 8)
+ggsave(file.path(image_path, "SI", "scatter_plot.png"), width = 8, height = 8)
 
 ```
 
-## maps
 
 ```{r}
-#need bbox w/ lat/long coordinates
-bbox <- st_bbox(st_transform(st_buffer(st_transform(monitoring_area_shp, crs_m), 10000), crs_deg))
 
-names(bbox) <- c("left", "bottom", "right", "top")
+# summarize model performance
 
-map0 <- suppressMessages(get_stamenmap(
-  bbox = bbox, 
-  zoom = 11, 
-  maptype = "toner-lite" #has airport symbol
-  #maptype = "toner-background" #roads & water but no airport
-))
+model_performance %>%
+  filter(annual %in%  c(keep_averages,
+                        "mean_of_medians",
+                        "median_of_medians"
+                        )) %>%
+  mutate(
+    annual = recode_factor(annual,
+                           "mean_of_win_medians" = "mean of winsorized medians",
+                           "mean_of_medians" = "mean of medians",
+                           "median_of_medians" = "median of medians",
+                           ),
+      
+    RMSE = ifelse(RMSE >=10, round(RMSE), round(RMSE, 1)),
+    RMSE = as.character(RMSE)
+  ) %>%
+  
+  select(-c(#annual, 
+            no_sites, reg_based_R2)) %>%
+  variable_relabel() %>%
+   
+  arrange(annual, variable, out_of_sample) %>%
+  
+  kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
+        col.names = c("Pollutant", "Annual Average", 
+                      "Out-of-Sample Set", "RMSE", "MSE-based R2", "UFP Size (nm)")
+  ) %>%
+  kable_styling()
 
-## map labels
-map_x_labels <- c(seq(-122.5, -121.9, 0.2)) #0.2
-map_y_labels <- c(seq(47.2, 48, 0.2)) #%>% format(nsmall=1)
+
+```
+
+
+sensitivity analyses
+
+```{r}
+ rmse_t <- model_performance %>% 
+  filter(annual %in%  c(keep_averages, "mean_of_medians", "median_of_medians")) %>%
+  mutate(annual = paste0(annual, "_rmse")) %>%
+  select(variable, annual, out_of_sample, RMSE) %>%
+  mutate(
+    RMSE = ifelse(RMSE >=10, round(RMSE), round(RMSE, 1)),
+    RMSE = as.character(RMSE)
+  ) %>%
+  spread(annual, RMSE)
+  
+model_performance %>% 
+  filter(annual %in%  c(keep_averages, "mean_of_medians", "median_of_medians")) %>%
+  mutate(annual = paste0(annual, "_r2")) %>%
+  select(variable, annual, out_of_sample, MSE_based_R2) %>%
+  spread(annual, MSE_based_R2) %>%
+  left_join(rmse_t) %>%
+  mutate(
+    out_of_sample = recode_factor(out_of_sample,
+                                  "cross-validation" = "CV",
+                                  "test" = "Test"
+                                  )
+  ) %>%
+  variable_relabel() %>%
+  select(variable, ufp_range_nm, out_of_sample, 
+         mean_of_win_medians_r2, mean_of_medians_r2, median_of_medians_r2,
+         mean_of_win_medians_rmse, mean_of_medians_rmse, median_of_medians_rmse
+         ) %>%
+  arrange(variable, ufp_range_nm, out_of_sample) %>%
+  
+  kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
+        col.names = c(rep(" ", 3),  
+                      "Mean of Winsorized Medians", "Mean of Medians","Median of Medians",
+                      "Mean of Winsorized Medians", "Mean of Medians","Median of Medians"
+                      )
+        ) %>%
+  kable_styling() %>%
+  add_header_above(c(#" " = 3,
+    "Pollutant" =2,# "UFP Range (nm)", 
+    "Out-of-Sample Set",
+                     "MSE-based R2"=3, "RMSE"=3))
+  
+```
 
 
 
-grid_predictions2 <- st_as_sf(grid_predictions, coords = c("longitude", "latitude"),  remove = F, crs=crs_deg) %>%
-  variable_relabel() 
 
-unique_pollutants <- unique(grid_predictions2$variable) %>% sort()
-
-non_ufp_p <- str_subset(string =  unique_pollutants, pattern = "UFP", negate = T) %>%
-  sort()
-
-ufp_p <- str_subset(string =  unique_pollutants, pattern = "UFP", negate = F) %>%
-  sort()
+ 
 
 
+
+
+# Grid Predictions 
+
+## Interpollation 
+
+```{r, old grid fn}
+# fn returns a grid of points (and resolution), evenly spaced given an sf's bbox and a desired number of points 
+
+# sf_df = grid_predictions2
+# no_pts = 1e3
+# id_suffix = "pt"
+
+make_grid <- function(
+  # grid area
+  sf_df,
+  # estimated number of desired points
+  no_pts,
+  id_suffix = "pt"
+  ) {
+  
+  #do this in meters so distances are the same horizontally & vertically
+  sf_bbox <- st_bbox(st_transform(sf_df, crs_m))
+  #sf_bbox <- st_bbox(sf_df, crs_m)
+  min_x <- sf_bbox[[1]]
+  min_y <- sf_bbox[[2]]
+  max_x <- sf_bbox[[3]]
+  max_y <- sf_bbox[[4]]
+  
+  #area of entire grid area
+  grid_area <- (max_y-min_y)*(max_x-min_x)
+  
+  #area of each small box? - can't remember why mathematically this works eventhough the # of points != the number of boxes created inside the entire grid
+  grid_area <- grid_area/no_pts
+  
+  #distance between each point (length of side of each small box)
+  resolution <- sqrt(grid_area)
+    
+  y <- seq(min_y, max_y, resolution)
+  x <- seq(min_x, max_x, resolution)
+  
+  grid <- expand.grid(x = x, y = y) %>%
+    mutate(native_id = paste0(id_suffix, "_", 
+                             #make all numbers the same length
+                             str_pad(seq(1, length.out = nrow(.)),
+                                     width = nchar(nrow(.)), 
+                                     pad="0")
+                             )
+           ) %>%
+    select(native_id, everything()) %>%
+    st_as_sf(., coords = c("x", "y"),  remove = F, 
+             #crs = st_crs(sf_df)
+             crs= crs_m
+             ) #%>%
+    st_transform(st_crs(sf_df))
+  
+  return(list(
+    grid = grid,
+    resolution = resolution)
+  )
+  
+}
+```
+
+
+```{r}
+ 
+library(raster)
+# helpful tutorial: https://swilke-geoscience.net/post/spatial_interpolation/
+
+
+finer_grid <- st_as_sf(grid_predictions0, coords = c("longitude", "latitude"),  crs= crs_deg) %>%
+  #st_transform(crs_m) %>%
+  # make a rectangular box w/ evenly spaced points at ~500 m resolution
+  st_bbox() %>% st_as_sfc() %>%
+  st_make_grid(cellsize = 0.01, what = "centers") %>% 
+  # view in df format
+  st_as_sf() %>%
+  #st_transform(crs_deg) %>%
+  cbind(., st_coordinates(.)) %>%
+  st_drop_geometry() %>%
+  mutate(Z=0)
+  
+
+finer_grid2 %>%
+  ggplot() + geom_sf(data=grid_predictions2, alpha=0.3, size=0.5) +
+  geom_point(aes(x=X, y=Y, col="finer grid"), alpha=0.5, size=0.5)
+  #geom_sf(aes(col="finer grid"), alpha=0.5, size=0.5)
+  
+```
+
+
+
+
+
+
+
+
+
+
+### --> only do this if file does not already exist 
+
+```{r}
+# make finer grid 
+finer_grid <- make_grid(sf_df = grid_predictions2, no_pts = 1.5e4, id_suffix = "pt")$grid
+#finer_grid$resolution
+
+# # check that the grid is finer than the existing grid
+# ggplot() + 
+#   geom_sf(data=finer_grid, aes(col="finer grid"),  size=0.1, alpha=1) + 
+#     geom_point(data=grid_predictions2, aes(x=longitude, y=latitude), size=0.2, alpha=0.2) 
+
+```
+
+```{r}
+# interpollate to the finer grid 
+idw_df0 <- lapply(unique_pollutants0, function(x) {
+   
+  idw_result = idw(formula = prediction~1,  
+          locations = st_as_sf(filter(grid_predictions0, variable ==x), coords = c("longitude", "latitude"),  remove = F, crs= crs_deg), 
+          newdata = st_as_sf(finer_grid2, coords = c("X", "Y"), crs= crs_deg) #finer_grid
+          ) %>%
+    mutate(variable = x) 
+  
+  }) %>%
+  bind_rows() %>% 
+  cbind(., st_coordinates(.)) %>%
+  st_drop_geometry() %>%
+  
+  variable_relabel(keep_original_var = T)
+  
+# idw_df <- idw_df0
+
+idw_df <- st_intersection(idw_df0, 
+                          monitoring_area_shp
+                          #monitoring_land_shp
+                          )
+
+# save file
+saveRDS(idw_df, file.path("Data", "Output", "Predictions", "grid", "predictions_idw.rda"))
+
+ 
+```
+
+
+### --> TEST
+
+
+
+
+
+
+
+
+
+```{r, fig.height = 12}
+# plot non ufps
+lapply(non_ufp_p, function(x) {
+  # x = non_ufp_p[2]
+
+ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #annual averages
+    # geom_sf(data=filter(idw_df, variable == x), inherit.aes = F, aes(col=var1.pred), shape = 15,
+    #         #size= 1.1, #2.3, 
+    #         alpha= 0.4 #0.65
+    #         )  +
+    geom_raster(data= filter(idw_df, variable == x), inherit.aes = F, aes(fill=var1.pred, x=X, y=Y), #shape = 15, size= 1.1, #2.3, 
+            #alpha= 0.4 #0.65
+            )  +
+    
+    scale_fill_gradient(name = "Conc", low = "yellow", high = "red") +
+    facet_wrap(~variable)  +
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                          #which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+    ) +
+    theme_bw() +
+    theme(
+      legend.justification=c(0,1),  
+      legend.position=c(0,1),  
+      legend.background =  element_blank()
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels,
+                       labels = format(map_y_labels,digits = 1,
+                                       nsmall = 1
+                       )
+    ) +
+    #add attribution/reference to bottom left
+    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                  label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+    ),
+    size=2.5
+    ) +
+    labs(x = "Longitude",
+         y = "Latitude" 
+    ) 
+  }) %>%
+  ggarrange(plotlist = .)
+
+
+ggsave(file.path(image_path, "Other", "non_ufp_maps.png"), height = 13, width = 11)
+#ggsave(file.path(image_path, "prediction_map_non_ufp.png"),  height = 13, width = 11)
+
+```
+
+
+
+
+
+
+
+## Maps 
+
+
+```{r, fig.height = 12, eval=F}
+ 
+#non-UFPs. each pollutant has its own legend
+
+print("Annual average pollutant concentrations at monitoring sites (N=309).")
+
+p <- list() 
+
+for(i in seq_along(non_ufp_p)) {
+  #i=1
+  
+  p[[i]] <- ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #annual averages
+    geom_sf(data=filter(grid_predictions2, variable %in% non_ufp_p[i]), 
+            aes(col=prediction), inherit.aes = F, size=2.3, alpha=0.65)  +
+    
+    scale_color_gradient(name = "Conc", low = "yellow", high = "red") +
+    facet_wrap(~variable)  + 
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+    
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+    ) +
+    theme_bw() +
+    theme(
+      legend.justification=c(0,1),  
+      legend.position=c(0,1),  
+      legend.background =  element_blank()
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels,
+                       labels = format(map_y_labels,digits = 1,
+                                       nsmall = 1
+                       )
+    ) +
+    #add attribution/reference to bottom left
+    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                  label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+    ),
+    size=2.5
+    ) +
+    labs(x = "Longitude",
+         y = "Latitude"#, fill = ""
+    ) 
+  
+  p[[i]]
+  
+}
+
+ggarrange(plotlist = p, ncol = 2, nrow = 2)
+
+ggsave(file.path(image_path, "prediction_map_non_ufp.png"),  height = 13, width = 11)
+
+```
+
+```{r, fig.height = 12}
+
+# UFP's. have same legend.
+
+ggmap(ggmap = map0, darken = c(.5, "white")) +
+  #annual averages
+  geom_sf(data=filter(idw_df, variable %in% ufp_p), aes(col=var1.pred), inherit.aes = F, shape=15,
+          #size=2.2, 
+          alpha=0.65
+          )  +
+  scale_color_gradient(name = "Conc", low = "yellow", high = "red") +
+  facet_wrap(~variable+ufp_range_nm, nrow = 2)  + 
+  # add scale & N arrow to top rught
+  annotation_scale(location = "tr") +
+  annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+  
+  annotation_north_arrow(location = "tr",
+                         #point towards North Pole
+                         which_north = "true",
+                         pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering
+  ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank(),
+  ) +
+  coord_sf(expand = F) +
+  scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+  scale_y_continuous(breaks = map_y_labels, 
+                     labels = format(map_y_labels,digits = 1, nsmall = 1)
+  ) +
+  #add attribution/reference to bottom left
+  geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+  ), size=2.5) +
+  labs(x = "Longitude", y = "Latitude", fill = "") 
+
+ggsave(file.path(image_path, "Other", "ufp_maps.png"), height = 13, width = 11)
+#ggsave(file.path(image_path, "prediction_map_ufp.png"),  height = 13, width = 11)
+
+
+```
+
+ 
+
+# Correlations
+
+```{r}
+
+cor_df <- mm_predictions %>%
+  mutate(
+  pollutant = if_else(grepl("UFP", variable),
+                      paste0(variable, "\n", ufp_range_nm),
+                      as.character(variable)
+  )
+  ) %>%    
+  select(pollutant, location, prediction) %>%   
+  spread(pollutant, prediction) %>%  
+  select(contains(c("UFP", "BC", "NO2", "PM2.5", "CO2")))
+
+```
+
+```{r}
+
+#function colors upper panel by correlation value
+# source: https://stackoverflow.com/questions/45873483/ggpairs-plot-with-heatmap-of-correlation-values 
+
+color_cor <- function(data, mapping, method="p", use="pairwise", alpha=0.5, ...){
+  #GGally, #ggpairs()
+  pacman::p_load(GGally)
+  
+  # grab data
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  # calculate correlation
+  corr <- cor(x, y, method=method, use=use)
+  
+  # calculate colour based on correlation value
+  # Here I have set a correlation of minus one to blue, 
+  # zero to white, and one to red 
+  # Change this to suit: possibly extend to add as an argument of `my_fn`
+  colFn <- colorRampPalette(c("blue", "white", "red"), interpolate ='spline')
+  fill <- colFn(100)[findInterval(corr, seq(-1, 1, length=100))]
+  
+  ggally_cor(data = data, mapping = mapping, 
+             #don't include stars if correlations "sign"
+             stars = FALSE,
+             digits=2,
+             ...) + 
+    theme_void() +
+    theme(panel.background = element_rect(fill=alpha(fill, alpha)))
+}
+ 
+```
+
+plot 
+
+```{r}
+print("Annual average pollutant prediction correlations")
+
+# correlation plot
+ggpairs(cor_df, 
+        upper = list(continuous = color_cor),
+        lower = list(continuous = wrap("smooth_loess", alpha=0.2)),
+) + #scale_x_continuous(labels = scales::scientific) 
+  scale_x_continuous(guide = guide_axis(check.overlap = TRUE))
+
+ggsave(file.path(image_path, "SI", "prediction_correlations.png"), height = 11, width = 11)
+
+ 
 ```
 
 # Prediction Errors
@@ -401,59 +888,6 @@ lapply(ufp_p, function(i) {
 
 ### Lasso - Error predictors
 
-```{r}
-# fn runs lasso and returns a list: a) covariate estimates: b) lambda
-
-lasso_fn <- function(dt, x_names, y_name, family. = "gaussian", lambda. = "") {
-  
-  pacman::p_load(glmnet)
-  
-  x <- model.matrix(as.formula(paste(y_name, "~", 
-                                     paste(x_names, collapse = " + "))
-  ), dt)[, -1]
-  
-  #replace y "name" w/ actual data
-  y <- dt[[y_name]]   
-  
-  #select lambda through CV if not supplied
-  if(lambda. == ""){
-    cv.out <- cv.glmnet(x = x,
-                        y = y, 
-                        alpha=1, 
-                        family= family., 
-                        standardize=T)
-    
-    lambda. <- cv.out$lambda.min
-  }
-  
-  # run Lasso
-  lasso.m <- glmnet(x = x,
-                    y = y, 
-                    alpha = 1, 
-                    family= family.,  
-                    standardize = T)
-  
-  #save coefficient estimates
-  lasso_coef <- predict(lasso.m, 
-                        type= "coefficients",  
-                        s= lambda.)[1:(ncol(x)+1),] %>%
-    as.data.frame() %>%
-    rownames_to_column() %>%
-    rename(cov = rowname,
-           coef = ".") %>%
-    #keep coefficients that are not 0 or intercept values
-    filter(coef != 0,
-           cov != "(Intercept)")
-  
-  
-  results <- list(results = lasso_coef,
-                  lambda = lambda.
-  )
-  
-  return(results)
-  
-}
-```
 
 ```{r}
 
@@ -516,132 +950,69 @@ lapply(vars, function(x) {
 ```
 
 
+## Compare UFP instruments
 
-# Grid Prediction Maps 
+where are UFP instrument readigns the most different? Looking at estimates (not predictions) here
+
+```{r}
+diff_df <- mm_predictions %>%
+  filter(grepl("UFP", variable)) %>%
+  select(location, latitude, longitude, var0, value) %>%
+  spread(var0, value) %>%
+  mutate(
+    dm_minus_ns = pmdisc_number - ns_total_conc,
+    dm_minus_ptrak = pmdisc_number - pnc_noscreen,
+    dm_minus_ptrak_screen = pmdisc_number - pnc_screen,
+    ) %>%
+  select(location, latitude, longitude, contains("dm_")) %>%
+  gather(variable, value, contains("dm_"))
 
 
-```{r, fig.height = 12}
- 
-#non-UFPs. each pollutant has its own legend
-
-print("Annual average pollutant concentrations at monitoring sites (N=309).")
-
-p <- list() 
-
-for(i in seq_along(non_ufp_p)) {
-  #i=1
+ufp_diff_lasso <- lapply(group_split(diff_df, variable), function(x) {
+  #x = group_split(diff_df, variable)[[1]]
   
-  p[[i]] <- ggmap(ggmap = map0, darken = c(.5, "white")) +
-    # #monitoring area
-    # geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"), alpha=0.1, lwd = 0.1) +
-    
-    #annual averages
-    geom_sf(data=filter(grid_predictions2, variable %in% non_ufp_p[i]), 
-            aes(col=prediction), inherit.aes = F, size=2.5
-            )  +
-    
-    scale_color_gradient(name = "Conc", low = "yellow", high = "red") +
-    facet_wrap(~variable)  + 
-    # add scale & N arrow to top rught
-    annotation_scale(location = "tr") +
-    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
-    
-    annotation_north_arrow(location = "tr",
-                           #point towards North Pole
-                           which_north = "true",
-                           pad_y = unit(0.5, "in"),
-                           style = north_arrow_fancy_orienteering
-    ) +
-    theme_bw() +
-    theme(
-      legend.justification=c(0,1),  
-      legend.position=c(0,1),  
-      legend.background =  element_blank()
-    ) +
-    coord_sf(expand = F) +
-    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
-    scale_y_continuous(breaks = map_y_labels,
-                       labels = format(map_y_labels,digits = 1,
-                                       nsmall = 1
-                       )
-    ) +
-    #arrange legend order
-    # guides(col = guide_colorbar(order = 2),
-    #        fill = guide_legend(order = 1)
-    # ) +
-    #add attribution/reference to bottom left
-    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
-                  label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
-    ),
-    size=2.5
-    ) +
-    labs(x = "Longitude",
-         y = "Latitude"#, fill = ""
-    ) 
+  lm <- left_join(x, mm_cov[,c("location", cov_names)]) %>%
+    lasso_fn(dt = ., x_names = cov_names,  y_name = "value")
   
-  p[[i]]
-  
-}
+  lm$result %>%
+    mutate(variable = first(x$variable))
+  }) %>%
+  bind_rows()
 
-ggarrange(plotlist = p, ncol = 2, nrow = 2)
-
-ggsave(file.path(image_path, "prediction_map_non_ufp.png"),  height = 13, width = 11)
 
 ```
 
-```{r, fig.height = 12}
+```{r}
+ufp_diff_lasso %>%
+  split_cov_name() %>%
+  ggplot(aes(x=coef, y=cov, col=variable, size=Buffer)) + 
+  geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
+  geom_point(shape=1) + 
+  labs(title = "Predictors of differences in UFP instruments")
+  
 
-# UFP's. have same legend.
+
+```
+
+```{r}
 
 ggmap(ggmap = map0, darken = c(.5, "white")) +
-  # #monitoring area
-  # geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"), alpha=0.1, lwd = 0.1) +
-  # 
-  #annual averages
-  geom_sf(data=filter(grid_predictions2, variable %in% ufp_p), aes(col=prediction), inherit.aes = F, size=2.5)  +
-  scale_color_gradient(name = "Conc", low = "yellow", high = "red") +
-  facet_wrap(~variable+ufp_range_nm, #Instrument~ufp_range_nm,
-             nrow = 2)  + 
-  # add scale & N arrow to top rught
-  annotation_scale(location = "tr") +
-  annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
-  
-  annotation_north_arrow(location = "tr",
-                         #point towards North Pole
-                         which_north = "true",
-                         pad_y = unit(0.5, "in"),
-                         style = north_arrow_fancy_orienteering
-  ) +
-  theme_bw() +
-  theme(
-    legend.justification=c(0,1),  
-    legend.position=c(0,1),  
-    legend.background =  element_blank(),
-  ) +
-  coord_sf(expand = F) +
-  scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
-  scale_y_continuous(breaks = map_y_labels, 
-                     labels = format(map_y_labels,digits = 1, nsmall = 1)
-  ) +
-  # #arrange legend order
-  # guides(col = guide_colorbar(order = 2),
-  #        fill = guide_legend(order = 1)) +
-  #add attribution/reference to bottom left
-  geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
-                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
-  ),
-  size=2.5
-  ) +
-  labs(x = "Longitude",
-       y = "Latitude",
-       fill = ""
-  ) 
+      geom_point(data=diff_df, aes(x=longitude, y=latitude, col=value)) + 
+      facet_wrap(~variable) + 
+      scale_color_gradient2(name = "Conc", low = "blue", high = "red", ) + 
+    labs(title = "UFP estimate differences")
 
-ggsave(file.path(image_path, "prediction_map_ufp.png"),  height = 13, width = 11)
-
+diff_df %>%
+  group_by(variable) %>%
+  summarize(
+    min = min(value),
+    q05 = quantile(value, 0.05),
+    mean = mean(value),
+    median = median(value),
+    q95 = quantile(value, 0.95),
+    max = max(value)
+  )
 
 ```
-
-
 
  
