@@ -48,20 +48,25 @@ covariate_table_fn <- function(dt, cov_name) {
                               elev_stdev = "standard deviation of elevation of 20 points surrounding the location",
                               elev_elevation = "elevation above sea level in meters",
                               imp_a = "average imperviousness",
-                              intersect_a1_a3_s = "number of a1-a3 road intersections",
-                              intersect_a2_a2_s = "number of a2-a2 road intersections",
-                              intersect_a2_a3_s = "number of a2-a3 road intersections",
-                              intersect_a3_a3_s = "number of a3-a3 road intersections",
-                              ll_a1_s = "length of a1 roads",
-                              ll_a23_s = "length of a2 and a3 roads",
-                              log_m_to_a1 = "log meters to closest a1 road",
-                              log_m_to_a1_a1_intersect = "log meters to closest a1-a1 road intersection",
-                              log_m_to_a1_a3_intersect = "log meters to closest a1-a3 road intersection",
-                              log_m_to_a123 = "log meters to closest a1, a2 or a3 road",
-                              log_m_to_a2_a2_intersect = "log meters to closest a2-a2 road intersection",
-                              log_m_to_a2_a3_intersect= "log meters to closest a2-a3 road intersection",
-                              log_m_to_a23 = "log meters to closest a2 or a3 road",
-                              log_m_to_a3_a3_intersect = "log meters to closest a3-a3 road intersection",
+                              intersect_a1_a3_s = "number of A1-A3 road intersections",
+                              intersect_a2_a2_s = "number of A2-A2 road intersections",
+                              intersect_a2_a3_s = "number of A2-A3 road intersections",
+                              intersect_a3_a3_s = "number of A3-A3 road intersections",
+                              ll_a1_s = "length of A1 roads",
+                              ll_a2_s = "length of A2 roads",
+                              ll_a3_s = "length of A3 roads",
+                              ll_a23_s = "length of A2 and A3 roads",
+                              log_m_to_a1 = "log meters to closest A1 road",
+                              log_m_to_a1_a1_intersect = "log meters to closest A1-A1 road intersection",
+                              log_m_to_a1_a2_intersect= "log meters to closest A1-A2 road intersection",
+                              log_m_to_a1_a3_intersect = "log meters to closest A1-A3 road intersection",
+                              log_m_to_a123 = "log meters to closest A1, A2 or A3 road",
+                              log_m_to_a2 = "log meters to closest A2 road",
+                              log_m_to_a2_a2_intersect = "log meters to closest A2-A2 road intersection",
+                              log_m_to_a2_a3_intersect= "log meters to closest A2-A3 road intersection",
+                              log_m_to_a23 = "log meters to closest A2 or A3 road",
+                              log_m_to_a3 = "log meters to closest A3 road",
+                              log_m_to_a3_a3_intersect = "log meters to closest A3-A3 road intersection",
                               log_m_to_airp = "log meters to closest airport",
                               log_m_to_coast = "log meters to closest coastline",
                               log_m_to_comm = "log meters to closest commercial and services area",
@@ -282,6 +287,35 @@ add_season <- function(dt, .date_var) {
   
 }
 
+######################################################################################################################
+# windsorizes a value
+# value = "median_value"
+# dt = stops0
+
+winsorize_fn <- function(dt, value, trim_quantile =0.05) {
+
+  #dt <- rename(dt, value = value)
+  
+  dt1 <- dt %>%
+  group_by(variable, location) %>%
+    mutate(
+    # wind_median_value = ifelse(median_value == max(median_value), max(median_value[median_value!=max(median_value)]),
+    #                            ifelse(median_value == min(median_value), min(median_value[median_value!=min(median_value)]),
+    #                                   median_value
+    #                            )),
+    # win_value = ifelse(value > quantile(value, 1-trim_quantile), quantile(value, 1-trim_quantile), 
+    #                              ifelse(value < quantile(value, trim_quantile), quantile(value, trim_quantile),
+    #                                     value))
+      win_value = ifelse(!!as.symbol(value) > quantile(!!as.symbol(value), 1-trim_quantile), quantile(!!as.symbol(value), 1-trim_quantile), 
+                         ifelse(!!as.symbol(value) < quantile(!!as.symbol(value), trim_quantile), quantile(!!as.symbol(value), trim_quantile),
+                                !!as.symbol(value)))
+    )
+  
+  #names(dt1)[names(dt1) == value] <- value
+  
+  
+  }
+
 
 ######################################################################################################################
 # * function for a standard boxplot with different whisker definitions to avoid plotting extreme/outlier points
@@ -422,47 +456,87 @@ facet_grid_equal <- function(...) {
 
 # fn relabels variable (pollutants) to include units and a clearer name for presentation purposes
 
-# dt = pca_rotation 
-# var = "rowname"
- 
-variable_relabel <- function(dt, var = "variable", keep_original_var = FALSE) {
+# dt = grid_predictions2 
+# var = "variable"
+# reverse_labels = TRUE
+
+variable_relabel <- function(dt, var = "variable", keep_original_var = FALSE, 
+                             # if original labels don't exist, add them
+                             reverse_labels = FALSE) {
   
   dt <- dt %>% 
     dplyr::rename(var=var) 
   
-  if(keep_original_var==TRUE){dt$var0 <- dt$var}
+  if(reverse_labels == FALSE) {
+    
+    if(keep_original_var==TRUE){dt$var0 <- dt$var}
+    
+    dt <- dt %>%
+      mutate(
+        ufp_range_nm = ifelse(var=="ns_total_conc", "10-420 nm",
+                           ifelse(var=="pmdisc_number", "10-700 nm",
+                                  ifelse(var=="pnc_noscreen", "20-1,000 nm",
+                                         ifelse(var=="pnc_screen", "36-1,000 nm", 
+                                                ifelse(var=="pnc_20_36", "20-36 nm",
+                                                       "-"
+                                         ))))),
+        ufp_instrument = ifelse(var=="ns_total_conc", "NanoScan",
+                              ifelse(var=="pmdisc_number", "DiSCmini",
+                                     ifelse(var=="pnc_noscreen", "P-TRAK",
+                                            ifelse(var=="pnc_screen", "Screened P-TRAK",
+                                                   "-"
+                                                   )))),
+        ufp_instrument = factor(ufp_instrument, levels = c("P-TRAK", "Screened P-TRAK", "NanoScan", "DiSCmini",  "-", "NA")),
+        
+        var = recode_factor(factor(var),
+                            "co_ppm" = "CO (ppm)",
+                            "co2_umol_mol" = "CO2 (ppm)",
+                            "ma200_ir_bc1" = "BC (ng/m3)",
+                            "neph_bscat" = "Neph (bscat/m)",
+                            "pm2.5_ug_m3" = "PM2.5 (ug/m3)",
+                            "no2" = "NO2 (ppb)",
+                            "pnc_noscreen" = "PNC (pt/cm3)", #, 20-1,000 nm
+                            "pnc_screen" = "PNC (pt/cm3)", #, 50-1,000 nm  
+                            "pnc_20_36" = "PNC (pt/cm3)", #, 20-50 nm  
+                            "ns_total_conc" = "PNC (pt/cm3)", #, 10-420 nm  
+                            "pmdisc_number" = "PNC (pt/cm3)", #, 10-700 nm  
+                            
+        ),
+        var = factor(var, levels = c("PNC (pt/cm3)", 
+                                     "BC (ng/m3)", 
+                                     "NO2 (ppb)",
+                                     "Neph (bscat/m)",  "PM2.5 (ug/m3)",
+                                     "CO2 (ppm)", 
+                                     "CO (ppm)"
+                                     )
+                     )
+      )
+    
+    }
   
-  dt <- dt %>%
-    mutate(
-      ufp_range_nm = ifelse(var=="ns_total_conc", "10-420 nm",
-                         ifelse(var=="pmdisc_number", "10-700 nm",
-                                ifelse(var=="pnc_noscreen", "20-1,000 nm",
-                                       ifelse(var=="pnc_screen", "36-1,000 nm", 
-                                              ifelse(var=="pnc_20_36", "20-36 nm",
-                                                     "-"
-                                       ))))),
-      var = recode_factor(factor(var),
-                          "co_ppm" = "CO (ppm)",
-                          "co2_umol_mol" = "CO2 (ppm)",
-                          "ma200_ir_bc1" = "BC (ng/m3)",
-                          "neph_bscat" = "Neph (bscat/m)",
-                          "pm2.5_ug_m3" = "PM2.5 (ug/m3)",
-                          "no2" = "NO2 (ppb)",
-                          "ns_total_conc" = "UFP (pt/cm3)", #, 10-420 nm  
-                          "pmdisc_number" = "UFP (pt/cm3)", #, 10-700 nm  
-                          "pnc_noscreen" = "UFP (pt/cm3)", #, 20-1,000 nm
-                          "pnc_screen" = "UFP (pt/cm3)", #, 50-1,000 nm  
-                          "pnc_20_36" = "UFP (pt/cm3)", #, 20-50 nm  
-      ),
-      var = factor(var, levels = c("UFP (pt/cm3)", 
-                                   "BC (ng/m3)", 
-                                   "Neph (bscat/m)",  "PM2.5 (ug/m3)",
-                                   "NO2 (ppb)",
-                                   "CO2 (ppm)", 
-                                   "CO (ppm)"
-                                   )
-                   )
-    )
+  # reverse labels
+  # make labels R friendly 
+  if(reverse_labels == TRUE) {
+    
+    dt <- mutate(dt,
+      ufp_range_nm = as.factor(ufp_range_nm),
+      
+      variable0 = case_when(
+      var == "CO (ppm)" ~ "co_ppm",
+      var == "CO2 (ppm)" ~ "co2_umol_mol",
+      var == "BC (ng/m3)" ~ "ma200_ir_bc1",
+      var == "PM2.5 (ug/m3)" ~ "pm2.5_ug_m3",
+      var == "NO2 (ppb)" ~ "no2",
+      ufp_range_nm == "20-1,000 nm" ~ "pnc_noscreen",
+      ufp_range_nm == "36-1,000 nm" ~ "pnc_screen",
+      ufp_range_nm == "10-420 nm" ~ "ns_total_conc",
+      ufp_range_nm == "10-700 nm" ~ "pmdisc_number",
+      TRUE ~ ""
+      )
+      )
+
+  }
+  
   
   names(dt)[names(dt) == "var"] <- var
   

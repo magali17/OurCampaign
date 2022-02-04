@@ -1,7 +1,11 @@
 
+#EXAMPLE OF HOW TO USE THIS PROGRAM
+# in a terminal open to the R project directory type:
+# rscript 4_prediction_program.R Data/Original/Geocovariates/dr0311_grid_covars.rda Data/Output/Predictions/grid rda 
+
 ################################################################################
 # OBJECTIVE
-# This program takes in a geographic covariate dataset and returns a dataset with annual average air pollution predictions (UFP, BC, NO2, PM2.5 and CO2) for the locations with geograhic covariates.
+# This program takes in a dataset with locations and their respective geographic covariates, and it returns a dataset with annual average air pollution predictions for PNC, BC, NO2, PM2.5 and CO2 at those locations.
 
 # INPUTS
 # Three inputs are required: 
@@ -10,16 +14,14 @@
 #   3. the desired prediction file format, either csv or rda 
 
 # OUTPUTS
-# The output is a dataset with annual average air pollution predictions (UFP, BC, NO2, PM2.5 and CO2) for the locations with geograhic covariates.
+# The output is a dataset with annual average air pollution predictions (PNC, BC, NO2, PM2.5 and CO2) for the locations with geograhic covariates. 
+# Plots and maps to summarize the resulting predictions are also included.
+# The default annual averages modeled are the mean of windzorized medians
 
 # ERROR MESSAGES
 # Error messages occur if:
 #   1. three arguments are not included
 #   2. there are locations with missing covariates or missing covariates alltogether that are required for the prediction models to run
-
-#EXAMPLE OF HOW TO USE
-# in a terminal open to the R project directory type:
-# rscript prediction_program.R Data/Original/Geocovariates/dr0311_grid_covars.rda Data/Output/Predictions/grid rda 
 
 ################################################################################
 
@@ -79,7 +81,7 @@ if(!dir.exists(prediction_directory)) {dir.create(prediction_directory)}
 prediction_file_format <- tolower(user_arguments[3])
 
 # desired predictions averages
-keep_averages <- c("mean_of_wind_medians")
+keep_averages <- c("mean_of_win_medians")
 #save(keep_averages, file = file.path("Data", "Output", "Objects", "keep_averages.rda"))
 
 ###########################################################################################
@@ -162,11 +164,11 @@ dt <- generate_new_vars(dt0)
 # ADD LOCATION INDICATORS
 ###########################################################################################
 
-#add indicators of where prediction locations are
+# add indicators of whether or not the prediction locations are in the monitoring area
 dt$in_monitoring_area <- suppressMessages(
   dt  %>%
     st_as_sf(coords = c('longitude', 'latitude'), crs=lat_long_crs) %>%
-    st_intersects(., monitoring_area, sparse = F ) %>%
+    st_intersects(., monitoring_area, sparse = F) %>%
     apply(., 1, any)
   )
 
@@ -179,7 +181,7 @@ has_all_covariates <- all(cov_names %in% names(dt))
 
 if(has_all_covariates==FALSE) {
   missing_cov <- cov_names[!cov_names %in% names(dt)]
-  error_msg <- paste("the following covariates are needed but missing from the dataset:", paste(missing_cov, collapse = ", ") )
+  error_msg <- paste("The following covariates are needed but missing from the dataset:", paste(missing_cov, collapse = ", "), ". Please fix this before continuing.")
   stop(error_msg)
 }
 
@@ -192,11 +194,11 @@ if(any(has_missing_values$.) ==TRUE) {
     filter(.==TRUE) %>%
     pull(rowname)
   
-  error_msg <- paste("the following covariates have missing values:", paste(covariates_with_missingness, collapse = ", ") )
+  error_msg <- paste("The following covariates have missing values:", paste(covariates_with_missingness, collapse = ", "), ". Please fix this before continuing.")
   
   stop(error_msg)
 }
-
+# print a message if all of the covariates are present and there are no locations with missing values
 if(has_all_covariates ==TRUE & any(has_missing_values$.) == FALSE) {print("Covariate checks passed.")} 
 
 ###########################################################################################
@@ -204,7 +206,7 @@ if(has_all_covariates ==TRUE & any(has_missing_values$.) == FALSE) {print("Covar
 ###########################################################################################
 print("Generating predictions...")
 
-# build prediction models for each pollutant and annual average estimate; predict at new locations
+# build prediction models for each pollutant ('variable') and annual average estimate; predict at new locations
 new_predictions0 <- lapply(group_split(annual, variable, annual), function(x) {
     temp <- dt %>%
       mutate(
@@ -238,7 +240,7 @@ new_predictions <- new_predictions0 %>%
 ###########################################################################################
 # FIGURES/MAPS OF PREDICTIONS
 ###########################################################################################
-#histogram of predictions
+# histogram of predictions
 ggplot(data=new_predictions, aes(x=prediction)) + 
   facet_wrap(~variable, scales = "free") + 
   geom_histogram(bins=30) +
@@ -247,14 +249,12 @@ ggplot(data=new_predictions, aes(x=prediction)) +
 ggsave(file.path(prediction_directory, "prediction_histograms.png"),width = 8, height = 10 )
 
 
+# prediction maps at all of the locations
 p <- list()
 
 for (i in unique(new_predictions$variable)) {
-  #i = unique(new_predictions$variable)[1]
-  
-  df <- filter(new_predictions,
-               #in_monitoring_area == TRUE,
-               variable == i)
+
+  df <- filter(new_predictions, variable == i)
   
   p[[i]] <- ggplot() +
     geom_sf(data=monitoring_area)  +
@@ -266,15 +266,13 @@ for (i in unique(new_predictions$variable)) {
 ggarrange(plotlist = p) %>% 
   annotate_figure(top = "UK-PLS predictions for all locations")
 
-
 ggsave(file.path(prediction_directory, "all_predictions.png"), height = 11, width = 8)
 
-# only locations in monitoring area
+# prediction maps only at locations in monitoring area
 p <- list()
 
 for (i in unique(new_predictions$variable)) {
-  #i = unique(new_predictions$variable)[1]
-  
+
   df <- filter(new_predictions,
                in_monitoring_area == TRUE,
                variable == i)
@@ -282,16 +280,14 @@ for (i in unique(new_predictions$variable)) {
   p[[i]] <- ggplot() +
     geom_sf(data=monitoring_area)  +
     geom_point(data= df, aes(x=longitude, y=latitude, col=prediction), alpha=0.3) + 
-    facet_wrap(~variable) + #theme_minimal()  
+    facet_wrap(~variable) + 
     theme_void()
 }
 
 ggarrange(plotlist = p) %>% 
   annotate_figure(top = "UK-PLS predictions for locations in monitoring area")
 
-
 ggsave(file.path(prediction_directory, "monitoring_predictions.png"), height = 11, width = 8)
-
 
 ###########################################################################################
 # SAVE PREDICTIONS

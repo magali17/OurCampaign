@@ -176,13 +176,13 @@ knitr::opts_chunk$set(echo = F,
                       fig.height = 6, fig.width = 10
                       )  
 
-# # Clear workspace of all objects and unload all extra (non-base) packages
-# rm(list = ls(all = TRUE))
-# if (!is.null(sessionInfo()$otherPkgs)) {
-#   res <- suppressWarnings(
-#     lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
-#       detach, character.only=TRUE, unload=TRUE, force=TRUE))
-# }
+# Clear workspace of all objects and unload all extra (non-base) packages
+rm(list = ls(all = TRUE))
+if (!is.null(sessionInfo()$otherPkgs)) {
+  res <- suppressWarnings(
+    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+      detach, character.only=TRUE, unload=TRUE, force=TRUE))
+}
 
 pacman::p_load(knitr, kableExtra, 
                ggpubr, tidyverse,
@@ -1537,25 +1537,19 @@ calibrations %>%
   #calculate 2-min medians 
   mutate(time = floor_date(time, unit = "2 min")) %>%
   group_by_at(vars(-value)) %>%
-  summarize(value = median(value)) %>%  #group_by(instrument_id) %>% summarize(n())
-  # # stats for boxplots
-  # group_by(variable, instrument_id) %>%
-  # alt_boxplot(var = "value") %>%  
-  left_join(low_value) %>% #View()
+  summarize(value = median(value)) %>%  
+  left_join(low_value) %>%  
   #add if primary instrument
   mutate(Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
          Instrument = factor(Instrument, levels = c("Primary", "Backup"))
          ) %>%
   variable_relabel() %>%
   
-  ggplot(aes(y=instrument_id, 
-             )) + 
-  facet_wrap(~variable +ufp_range_nm, scales="free") +
+  ggplot(aes(y=instrument_id)) + 
+  facet_wrap(~variable +ufp_instrument, scales="free") +
   geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
   #geom_point(aes(x=value), alpha=0.3) +
   geom_jitter(aes(x=value, col=Instrument), alpha=0.3) +
-  
-  #geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
   
   # a low on-route value (for comparison)
   geom_vline(aes(xintercept = low, linetype=paste0("Low Stop Conc\nQ", low_q)),
@@ -1563,7 +1557,6 @@ calibrations %>%
              ) +
   labs(x = "Value",
        y = "Instrument ID",
-       
        linetype=""
        )
 
@@ -1571,45 +1564,7 @@ ggsave(filename = file.path(image_path, "SI", "zero.png"), width = 10, height = 
 
 ```
 
-```{r, eval=F}
-# old boxplots. 
-
-print("2-min median instrument readings during zero checks")
-
-calibrations %>%
-  # look at particle instruments
-  filter(str_detect(instrument_id, paste0("^", paste(pt_pollutants, collapse = "|")))) %>%  
-  #calculate 2-min medians 
-  mutate(time = floor_date(time, unit = "2 min")) %>%
-  group_by_at(vars(-value)) %>%
-  summarize(value = median(value)) %>%  #group_by(instrument_id) %>% summarize(n())
-  # stats for boxplots
-  group_by(variable, instrument_id) %>%
-  alt_boxplot(var = "value") %>%  
-  left_join(low_value) %>% #View()
-  #add if primary instrument
-  mutate(Instrument = ifelse(instrument_id %in% primary_instruments, "Primary", "Backup"),
-         Instrument = factor(Instrument, levels = c("Primary", "Backup"))
-         ) %>%
-  variable_relabel() %>%
-  
-  ggplot(aes(y=instrument_id, linetype=Instrument)) + 
-  facet_wrap(~variable +ufp_range_nm, scales="free") +
-  geom_vline(xintercept = 0, linetype=2, alpha=0.5) +
-  geom_boxplot(stat = "identity", aes(xmin=Qmin, xlower=Q25, xmiddle=Q50, xupper=Q75, xmax=Qmax)) +
-  
-  # a low on-route value (for comparison)
-  geom_vline(aes(xintercept = low, col=paste0("Low Stop Conc\nQ", low_q)), #size=3
-             ) +
-  labs(x = "Value",
-       y = "Instrument ID",
-       col=""
-       )
-
-# ggsave(filename = file.path(image_path, "SI", "zero.png"), width = 10)
-
-```
-
+ 
 
 * don't see temporal trends to suggest shifting instrument readings over time 
 
@@ -1758,8 +1713,8 @@ s1 <- dt %>%
 
 full_join(s0, s1) %>%
   variable_relabel() %>%
-  mutate(variable = ifelse(grepl("UFP", variable), paste0(variable, ", ", ufp_range_nm, "nm"), as.character(variable) )) %>%
-  select(-ufp_range_nm) %>%
+  mutate(variable = ifelse(grepl("PNC", variable), paste0(variable, ", ", ufp_instrument), as.character(variable) )) %>%
+  select(-c(ufp_range_nm, ufp_instrument)) %>%
   rbind(c("TOTAL", sum(.$original_samples), sum(.$final_samples))) %>%
   mutate_at(vars(-variable), ~as.numeric(.)) %>%
   mutate(
@@ -2397,7 +2352,7 @@ p[[1]] <- dt_stops3_colo_wide %>%
   drop_na(BC_0066, BC_0063) %>%
   ggplot(aes(x=BC_0066, y=BC_0063)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"BC (ng/m3)") + 
+  facet_wrap_equal(~"BC (ng/m3)\n") + 
   geom_abline(slope = 1, intercept = 0, linetype=2) + 
   geom_smooth(method="lm") + 
   coord_fixed() #+ 
@@ -2419,139 +2374,68 @@ p[[2]] <- dt_stops3_colo_wide %>%
   drop_na(CO2_14, CO2_19) %>%
   ggplot(aes(x=CO2_14, y=CO2_19)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"CO2 (ppm)") + 
+  facet_wrap_equal(~"CO2 (ppm)\n") + 
   geom_abline(slope = 1, intercept = 0, linetype=2)+ 
   geom_smooth(method="lm") + 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
-
-  # colo.plot(x.variable = "CO2_14", y.variable = "CO2_19", 
-  #           alpha_value = 0.7)  
+  coord_fixed() 
+  
 
 p[[3]] <- dt_stops3_colo_wide %>%
   drop_na(NO2_2, NO2_1) %>%
   ggplot(aes(x=NO2_2, y=NO2_1)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"NO2 (ppb)") + 
+  facet_wrap_equal(~"NO2 (ppb)\n") + 
   geom_abline(slope = 1, intercept = 0, linetype=2)+ 
   geom_smooth(method="lm") + 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
-
-  # colo.plot(x.variable = "NO2_2", y.variable = "NO2_1",  
-  #           slope_digits = 0, int_digits = 2, alpha_value = 0.7)  
+  coord_fixed() 
 
 p[[4]] <- dt_stops3_colo_wide %>%
   drop_na(PM25_176, PM25_205) %>%
   ggplot(aes(x=PM25_176, y=PM25_205)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"Neph (bscat/m)") + 
+  facet_wrap_equal(~"Neph (bscat/m)\n") + 
   geom_abline(slope = 1, intercept = 0, linetype=2)+ 
   geom_smooth(method="lm") + 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
+  coord_fixed() 
 
-  # colo.plot(x.variable = "PM25_176", y.variable = "PM25_205", int_digits = 6, rmse.digits = 6, alpha_value = 0.7)  
-
-p[[5]] <- dt_stops3_colo_wide %>%
-  drop_na(PMDISC_3, PMDISC_8) %>%
-  ggplot(aes(x=PMDISC_3, y=PMDISC_8)) + 
-  geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"DiSCmini, UFP (pt/cm3)") + 
-  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
-  geom_smooth(method="lm") + 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
-
-#colo.plot(x.variable = "PMDISC_3", y.variable = "PMDISC_8", alpha_value = 0.7)  
 
 #that these are the only 2 non-screeend PTRAKS that were collocated 
-p[[6]] <- dt_stops3_colo_wide %>%
+p[[5]] <- dt_stops3_colo_wide %>%
   drop_na(PMPT_94, PMPT_93) %>%
   ggplot(aes(x=PMPT_94, y=PMPT_93)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"P-TRAK, UFP (pt/cm3)") + 
+  facet_wrap_equal(~"PNC (pt/cm3)\nP-TRAK") + 
   geom_abline(slope = 1, intercept = 0, linetype=2)+ 
   geom_smooth(method="lm") + 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
-
-  #colo.plot(x.variable = "PMPT_94", y.variable = "PMPT_93",  alpha_value = 0.7)  
+  coord_fixed() 
 
 # that these are the only 2 screeend PTRAKS that were collocated 
-p[[7]] <- dt_stops3_colo_wide %>%
+p[[6]] <- dt_stops3_colo_wide %>%
   drop_na(PMPTSCREEN_94, PMPTSCREEN_3) %>%
   ggplot(aes(x=PMPTSCREEN_94, y=PMPTSCREEN_3)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"P-TRAK, screened, UFP (pt/cm3)") + 
+  facet_wrap_equal(~"PNC (pt/cm3)\nScreened P-TRAK") + 
   geom_abline(slope = 1, intercept = 0, linetype=2)+ 
   geom_smooth(method="lm")+ 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
+  coord_fixed() 
 
-  #colo.plot(x.variable = "PMPTSCREEN_94", y.variable = "PMPTSCREEN_3", alpha_value = 0.7) 
-
-p[[8]] <- dt_stops3_colo_wide %>%
+p[[7]] <- dt_stops3_colo_wide %>%
   drop_na(PMSCAN_5, PMSCAN_3) %>%
   ggplot(aes(x=PMSCAN_5, y=PMSCAN_3)) + 
   geom_point(alpha=0.7) + 
-  facet_wrap_equal(~"NanoScan, UFP (pt/cm3)") + 
+  facet_wrap_equal(~"PNC (pt/cm3)\nNanoScan") + 
   geom_abline(slope = 1, intercept = 0, linetype=2) + 
   geom_smooth(method="lm") + 
-  coord_fixed() #+ 
-  # #note labels are weird when use facet_wrap, but look correct when not using facetwrap
-  # stat_poly_eq(formula = y~x, parse=T, coef.digits = 2,
-  #              aes(label =  paste(#stat(eq.label),  
-  #                                 stat(n.label),
-  #                                 #stat(rr.label), 
-  #                                 sep = "*\", \"*"
-  #                                 )
-  #                  ))  
-  
-  #colo.plot(x.variable = "PMSCAN_5", y.variable = "PMSCAN_3", alpha_value = 0.7)  
+  coord_fixed() 
 
+p[[8]] <- dt_stops3_colo_wide %>%
+  drop_na(PMDISC_3, PMDISC_8) %>%
+  ggplot(aes(x=PMDISC_3, y=PMDISC_8)) + 
+  geom_point(alpha=0.7) + 
+  facet_wrap_equal(~"PNC (pt/cm3)\nDiSCmini") + 
+  geom_abline(slope = 1, intercept = 0, linetype=2)+ 
+  geom_smooth(method="lm") + 
+  coord_fixed() 
 
 print("Instrument Collocations")
 
@@ -3465,13 +3349,15 @@ aqs_colo_p <- dt_doe_l %>%
              alpha=0.5
              ) + 
   geom_smooth(aes(x=DOE, y=MM), method = "lm", se = F, inherit.aes = F ) + 
-   stat_poly_eq(aes(label =  paste(stat(eq.label),
-                                  stat(rr.label), sep = "*\", \"*")),
+   stat_poly_eq(aes(label =  #paste(
+                      stat(eq.label)#,
+                                  #stat(rr.label), sep = "*\", \"*")
+                    ),
                formula = y~x, parse=T, coef.digits = 2
                ) +
-  labs(
-       y = "Mobile Monitoring",
-       col = "AQS Site"
+  labs(x = "DOE Measurements",
+       y = "Mobile Monitoring Measurements",
+       col = "AQS Site "
        )
   
 aqs_colo_p 
@@ -3590,10 +3476,10 @@ annual_colo_p <- true_annual %>%
  # geom_line(stat="smooth", method = "lm", size = 0.5, alpha = 0.5) +
   
     labs(
-         col = "2-min Est",
+         col = "2-min Estimate",
          shape = "Location",         
-         x="True Annual Average",
-         y = "Estimate"
+         x="True Annual Average\nUsing All DOE Data",
+         y = "Estimated Annual Average\nFrom Repeated 2-Min Measures"
          )
 
 annual_colo_p
@@ -3840,8 +3726,8 @@ s1 <- final_data %>%
  
 full_join(s0, s1) %>%
   variable_relabel() %>%
-  mutate(variable = ifelse(grepl("UFP", variable), paste0(variable, ", ", ufp_range_nm, "nm"), as.character(variable) )) %>%
-  select(-ufp_range_nm) %>%
+  mutate(variable = ifelse(grepl("PNC", variable), paste0(variable, ", ", ufp_instrument), as.character(variable) )) %>%
+  select(-c(ufp_range_nm, ufp_instrument)) %>%
   #rbind(c("TOTAL", sum(.$original_stops), sum(.$final_stops))) %>%
   #mutate_at(vars(-variable), ~as.numeric(.)) %>%
   mutate(

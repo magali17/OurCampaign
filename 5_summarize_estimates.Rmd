@@ -1,0 +1,1234 @@
+---
+title: "Campaign Data Summary"
+author: "Magali Blanco"
+date: ' `r Sys.time()` '
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '3'
+    number_sections: true
+    toc_float: true
+    collapsed: false
+    smooth_scroll: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo=F}
+##merge with github. always do these 4 steps all together. enter the following into the Terminal.
+# 
+###a. git pull origin master #do this before start editing & before you're read to upload changes again
+###b. git add _____.Rmd 
+###c. git commit -m "___my commit message in parentheses" 
+###d. git push origin master
+# 
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      cache=F, cache.comments = F, 
+                      message = F, warning = F, 
+                      tidy.opts=list(width.cutoff=60), tidy=TRUE,
+                      fig.height = 6, fig.width = 10
+                      )  
+
+# Clear workspace of all objects and unload all extra (non-base) packages
+rm(list = ls(all = TRUE))
+if (!is.null(sessionInfo()$otherPkgs)) {
+  res <- suppressWarnings(
+    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+      detach, character.only=TRUE, unload=TRUE, force=TRUE))
+}
+
+pacman::p_load(knitr, kableExtra, broom,
+               ggpubr, tidyverse,
+               ggrepel, #geom_label_repel
+               ggmap, sf, ggspatial, #mapping...adding scales, N arrows
+               ggrepel, #avoid overlapping labels
+               units, #convert between e.g., m to km
+               #time series data 
+               lubridate,
+               
+               fmsb, #percentile()
+               GGally, #ggpairs()
+               VCA, #anovaVCA()
+               gstat, #variogram()
+               ggpmisc, # for ggplot() geom="table"
+               units, #convert between e.g., m to km
+               colorspace #create color palates that "look good". e.g., rainbow_hcl(3)
+               )    
+ 
+
+set.seed(1)
+
+theme_set(theme_bw())
+theme_update(legend.position = "bottom")
+
+image_path <- file.path("..", "Manuscript", "Images")
+
+```
+
+
+# Upload data
+
+```{r}
+#functions
+source("0_Functions.R")
+
+# 'locations' table
+load(file.path("Data", "Original", "locations_table.rda"))
+
+#definitions: ap 
+load(file.path("Data", "Output", "common_vars.rda"))
+
+#stop data
+stops0 <- readRDS(file.path("Data", "Output", "stop_data.rda")) %>%
+  select(-mean_value) %>% rename(value = median_value)
+
+
+#geocovariates
+#geo <- readRDS(file.path("~", "OneDrive - UW", "Documents","School","PhD", "Dissertation", "TRAP R Project","Data", "Aim 2", "Geocovariates", "cov_mm_preprocessed.rda"))
+
+```
+
+ 
+```{r}
+#mapping
+crs_m <- 32148
+crs_deg <- 4326 #WGS84. in decimal degrees
+
+#shapefiles
+monitoring_area_shp <- readRDS(file.path("Data", "Output", "GIS", "monitoring_area_shp.rda")) %>%
+  #convert from 4269 
+  st_transform(crs_deg)
+
+```
+
+```{r}
+#need bbox w/ lat/long coordinates
+bbox <- st_bbox(st_transform(st_buffer(st_transform(monitoring_area_shp, crs_m), 10000), crs_deg))
+
+names(bbox) <- c("left", "bottom", "right", "top")
+
+map0 <- suppressMessages(get_stamenmap(
+  bbox = bbox, 
+  zoom = 11, 
+  maptype = "toner-lite" #has airport symbol
+  #maptype = "toner-background" #roads & water but no airport
+    ))
+#map0 %>% ggmap(darken = c(.4, "white"))
+
+
+gis_path0 <- file.path("~", "OneDrive - UW", "Documents", "School", "PhD", "Dissertation", "GIS", "Shapefiles")
+ 
+```
+
+```{r}
+ 
+keep_names <- setdiff(names(stops0), c("instrument_id", "primary_instrument", "ufp_range_nm")) #"value_c1", "value_raw", 
+
+# add stop #s
+stop_no <- stops0 %>%
+  distinct(location) %>% 
+  mutate(location_no = row_number()) 
+
+stops0.1 <- stops0 %>%
+  select(keep_names) %>%
+   
+  # add stop #
+  left_join(stop_no) %>%
+  # add other labels/temporal variables
+  mutate(
+    #variable = ifelse(grepl("neph", variable), "pm2.5_ug_m3", variable),
+    day = wday(time,label = T, week_start = 1),
+    hour = hour(time),
+    pollutant = variable,
+  ) %>%
+  variable_relabel(var = "pollutant") %>%
+  mutate(pollutant2 = ifelse(grepl("PNC", pollutant), 
+                             paste0(pollutant, ", ", ufp_instrument),
+                             as.character(pollutant)
+                             )
+         ) %>%
+  add_season(.date_var = "date") 
+  
+```
+
+```{r}
+
+ptrak_bin_range <- c("20-36 nm", "36-1,000 nm")
+
+```
+
+
+```{r}
+ stops <- stops0.1 %>%
+  group_by(variable, location) %>%
+  #winsorize median values  
+  winsorize_fn(value = "value") %>% 
+  ungroup()
+  
+
+```
+
+
+instrument names
+
+```{r}
+instruments <- stops %>%
+  distinct(variable, pollutant, pollutant2) %>%
+  mutate(
+    Instrument = c("MA200", "Li-Cor", "M903", "DiSCmini", "Screened P-TRAK", "NanoScan", "CAPS", "P-TRAK")
+  )
+
+```
+
+
+
+common variables
+
+```{r}
+low_boxplot_q <- 0.05
+high_boxplot_q <- 0.95
+
+# maps
+## map labels
+map_x_labels <- c(seq(-122.5, -121.9, 0.2)) #0.2
+map_y_labels <- c(seq(47.2, 48, 0.2)) #%>% format(nsmall=1)
+ 
+unique_pollutants <- unique(stops$pollutant) %>% sort()
+unique_pollutants2 <- unique(stops$pollutant2) %>% sort()
+uniqe_variables <-  
+  relevel( 
+  factor(unique(stops$variable)), 
+                           ref = "no2" )
+
+non_ufp_p <- str_subset(string =  unique_pollutants, 
+           pattern = "PNC", 
+           negate = T) %>%
+  sort()
+
+
+ufp_p <- str_subset(string =  unique_pollutants, 
+           pattern = "PNC", 
+           negate = F) %>% unique()
+
+
+pollutant_levels <-  c("PNC (pt/cm3), P-TRAK", "PNC (pt/cm3), Screened P-TRAK", "PNC (pt/cm3), NanoScan", "PNC (pt/cm3), DiSCmini", "BC (ng/m3)", "NO2 (ppb)", "PM2.5 (ug/m3)",  "CO2 (ppm)")
+
+pollutant_levels2 <-  c("PNC (pt/cm3)",  str_subset(string =  pollutant_levels, pattern = "PNC", negate = T))
+
+
+save(pollutant_levels, pollutant_levels2, file = file.path("Data", "Output", "Objects", "pollutant_levels.rda"))
+
+
+ufp_instruments <- c("P-TRAK", "Screened P-TRAK", "NanoScan", "DiSCmini")
+
+```
+
+# Route Statistics
+
+
+```{r}
+# annie's work 
+on_road <- readRDS(file.path("Data", "Annie", "route_stats_08.02.21.rds"))
+
+```
+
+
+
+```{r}
+# route distance
+ 
+routes_shp <- read_sf(file.path(gis_path0, "Routes 190910", "All routes.shp")) %>%
+  st_transform(crs_deg) %>%
+  mutate(
+    Route = as.factor(Route)
+  )
+
+```
+
+ 
+
+```{r}
+  #group_by(Route) %>%
+#st_union(by_feature = T)
+  #st_combine()
+
+route_dist <- routes_shp %>%
+  #calculate length of each piece of route string
+  mutate(length_mi = as.numeric(set_units(st_length(.), "mi")),
+         length_km = as.numeric(set_units(st_length(.), "km")),
+         ) %>%
+  st_drop_geometry() %>% as.data.frame() %>%
+  #total route distnace
+  group_by(Route) %>%
+  summarise(length_mi = sum(length_mi),
+            length_km = sum(length_km),
+            )  
+  
+
+```
+
+
+
+```{r}
+
+#basic route stats
+route_stats <- stops %>%
+  mutate(
+    Route = substr(runname, 14, nchar(runname))
+  ) %>%
+  group_by(Route) %>%
+  summarize(
+    stops = length(unique(location)),
+    dates = length(unique(runname))
+  ) %>%
+  left_join(route_dist) %>%
+  mutate(
+    total_distance_mi = dates * length_mi,
+    total_distance_km = dates * length_km
+  ) 
+
+#total row
+tot <- route_stats %>%
+  summarize(
+    Route = "Total",
+    stops = sum(stops),
+    dates = max(dates),
+    length_mi = sum(length_mi),
+    length_km = sum(length_km),
+    total_distance_mi = sum(total_distance_mi),
+    total_distance_km = sum(total_distance_km)
+    )
+
+# combine
+route_stats1 <- route_stats %>%
+  rbind(tot) %>%
+  left_join(on_road) %>%
+  select(-no_road_segments)
+
+route_stats1 %>%
+  kable(caption = "Route statistics. Number of sampling dates includes makeup routes, which may have been slightly altered.", 
+        col.names = c("Route", "No. Stops", "No. Sampling Dates", "Distance (mi)","Distance (km)", "Total Distance (mi)", "Total Distance (km)", "Median (IQR) Drive Time (hr)", "Total Drive Time (hr)" #names(on_road)[-1]
+                      ),
+        digits = 0, 
+        format.args = list(big.mark = ",")
+        ) %>%
+  kable_styling()  
+
+
+```
+
+
+range estimates
+
+```{r}
+route_stats1 %>%
+  slice(-10) %>%
+  mutate_if(is.numeric, ~round(., 0)) %>%
+  summarize(
+    stops = paste0(min(stops), " - ", max(stops)),
+    dates = paste0(min(dates), " - ", max(dates)),
+    length_km = paste0(min(length_km), " - ", max(length_km)),
+    length_mi = paste0(min(length_mi), " - ", max(length_mi)),
+    total_distance_km = paste0(min(total_distance_km), " - ", max(total_distance_km)),
+    total_distance_mi = paste0(min(total_distance_mi), " - ", max(total_distance_mi)),
+    
+  ) %>%
+  kable(caption = "route-specific statistic ranges") %>%
+  kable_styling()
+
+
+```
+
+
+
+# Drive Days
+
+```{r}
+#total 
+stops %>%
+  distinct(runname) %>%  
+  summarize(total_drive_days = n()) %>%
+  kable(caption = "total drive days") %>%
+  kable_styling()
+
+## by instrument
+stops %>%
+  group_by(pollutant, ufp_range_nm) %>%
+  distinct(runname) %>%  
+  summarize(total_drive_days = n()) %>%
+  kable(caption = "total drive days, by instrument") %>%
+  kable_styling()
+
+```
+
+```{r}
+stops %>%
+  mutate(hour = ifelse(hour==0, 24, hour)) %>% 
+  summarize(
+    Earliest_sampling_hour = min(hour),
+    Latest_sampling_hour = max(hour)
+  ) %>%
+  kable(caption = "earliest and latest sampling hour in campaign") %>%
+  kable_styling()
+
+```
+
+
+# Stop medians
+
+## Sample size
+
+* this is for the stops the mobile platform completed. some instruments may have fewer readings (e.g., due to instrument issues)
+
+```{r}
+stops %>%
+  distinct(runname, location) %>%  
+  #visits per location
+  group_by(location) %>%
+  summarize(
+    N_visits = n()
+  ) %>%   
+  #disgtribution of number of site visits
+  summarize(
+    N = n(),
+    Min = min(N_visits),
+    Q25 = quantile(N_visits, 0.25),
+    Mean = mean(N_visits),
+    SD = sd(N_visits),
+    Median = quantile(N_visits, 0.50),
+    IQR = IQR(N_visits),
+    Q75 = quantile(N_visits, 0.95),
+    Max = max(N_visits),
+  ) %>%
+  kable(caption = "number of visits to each location", 
+        digits = 1
+        ) %>%
+  kable_styling() 
+  
+```
+
+number of visits at different times of the day    
+* showing example for UFPs since all pollutant trend were similar    
+* sites were visited every season and day of the week    
+* sites were more likely to be visited during certain hours: early morning, early afternoon, and evening hours
+
+
+```{r}
+
+print("total number of site visits")
+
+stops %>%
+  #show UFPs as an example
+  filter(variable == "pnc_noscreen") %>%
+
+  gather(temporal_var, temporal_value, season, day, hour) %>%
+  mutate(
+    temporal_var = factor(temporal_var, levels = c("season", "day", "hour")),
+    temporal_value = factor(temporal_value, 
+                            levels = c(levels(stops$season), levels(stops$day), c(0:23) )
+                              )
+    ) %>%  
+  # group_by(temporal_var, temporal_value, location, location_no, variable) %>%
+  # summarize(count = n()) %>%
+  
+  ungroup() %>%
+  mutate(location_no = factor(location_no)) %>%
+  
+  ggplot(aes(x=temporal_value,
+             y=location_no,
+             #group=location_no
+             )) + 
+  facet_grid(pollutant~temporal_var, scales="free") + 
+  geom_bin2d(
+    #binwidth = c(1, 1),
+    #bins=length(unique(stops$location_no))
+             ) +
+  #scale_y_discrete(breaks = seq(10, 309, 10)) +
+  scale_y_discrete(guide = guide_axis(check.overlap = T))+
+  
+  #scale_x_discrete(guide = guide_axis(check.overlap = T))+
+  labs(
+       x = "Sampling Time" ,
+       y="Site",
+       fill = "No. Visits"
+       )
+
+ggsave(file = file.path(image_path, "SI", "samples_per_site.png"), height = 9, width = 10)
+
+```
+
+
+
+## Concentration Table
+
+```{r}
+
+location_quant <- stops %>%
+  #calc stats for alternative boxplots
+  group_by(pollutant, ufp_range_nm, location, location_no) %>%
+  alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>%
+  mutate(iqr = Q75-Q25,
+         qmax_qmin = Qmax/Qmin,
+         max_min = Max/Min
+         )
+
+ 
+
+```
+
+
+
+```{r}
+# conc table
+
+stops %>%
+  left_join(instruments) %>%
+  group_by(Pollutant=pollutant, Instrument) %>%
+  summarize(
+    N = n(),
+    #Min = min(value),
+    Q05 = quantile(value, 0.05),
+    Q25 = quantile(value, 0.25),
+    Median = quantile(value, 0.50),
+    Mean = mean(value),
+    Q75 = quantile(value, 0.75),
+    Q95 = quantile(value, 0.95)
+    #Max = max(value),
+    ) %>%
+  # mutate(
+  # 'Q95/Q05' = format(Q95/Q05, digits = 2),
+  # ) %>%
+  mutate_at(
+    vars(N:Q95), ~ifelse(grepl("PNC|CO2|BC", Pollutant), 
+                           format(., digits=0, scientific = F, big.mark = ","),
+                           format(., digits=2, scientific = F, big.mark = ",")
+                           )
+  ) %>%
+  mutate(
+    Instrument = factor(Instrument, levels = c("P-TRAK", "Screened P-TRAK", "P-TRAK, Screen", "NanoScan", "DiSCmini", "MA200","CAPS", "M903", "Li-Cor",  "-", "NA"))
+
+  ) %>%
+  arrange(Instrument) %>%
+  kable(caption = "Distribution of site visit pollutant concentrations (N = 309 sites x ~ 29 visits/site).") %>%
+  kable_styling()
+
+```
+
+
+## Site Variability
+
+* boxplots of site visit medians.    
+* whiskers are for the quantiles: `r low_boxplot_q` and `r high_boxplot_q`
+
+```{r}
+# load between site variabiltiy (later)
+
+annual_conc1 <- readRDS(file.path("Data", "Output", "annual_conc_table.rda")) %>%
+  mutate(
+    IQR = Q75-Q25
+  ) %>%
+  select(Pollutant, Instrument, IQR) %>%
+  mutate(
+    IQR = ifelse(grepl("PNC|CO|BC|NO2", Pollutant), 
+                           format(IQR, digits=0, scientific = F, big.mark = ",", 
+                                  ),
+                           format(IQR, digits=1, scientific = F, big.mark = ",", 
+                                  )
+                  )
+    )
+
+
+```
+
+
+```{r, eval=F}
+
+# # IQR table
+# location_quant %>%
+#   mutate(
+#     pollutant = as.character(pollutant),
+#     pollutant = ifelse(grepl("UFP", pollutant), paste0(pollutant, ", ", ufp_range_nm), pollutant)
+#          ) %>%
+#   #left_join(instruments, by=c("pollutant" = "pollutant2")) %>%
+#   group_by(Pollutant=pollutant, #Instrument
+#            ) %>%
+#   summarize(
+#     Min = min(iqr),
+#     Median = quantile(iqr, 0.50),
+#     Max = max(iqr),
+#     ) %>%
+#   mutate(
+#     'Max/Min' = format(Max/Min, digits = 2),
+#   ) %>%
+#   mutate_at(
+#     vars(Min:Max), ~ifelse(grepl("UFP|CO2|BC", Pollutant), 
+#                            format(., digits=0, scientific = F, big.mark = ",",  
+#                                   justify = "left"
+#                                   ),
+#                            format(., digits=2, scientific = F, big.mark = ",", 
+#                                   justify = "left"
+#                                   )
+#                            )
+#   ) %>% 
+#   
+#   mutate(
+#     Min = gsub(" ", "", Min),    
+#     Max = gsub(" ", "", Max),
+#     Median = paste0(Median, " (", Min, "-", Max, ")")
+#         ) %>%
+#   select(
+#     -c(Min, Max)
+#   ) %>%
+#   
+#   left_join(annual_conc1) %>%
+#   relocate(Instrument, .after=Pollutant) %>%
+#   
+#   kable(caption = 
+#           "Comparison of within and between site variability. Within site variability is for site-specific IQR values of median visit concentrations (N = 309 site IQRs, each site has approximately 29 visits) and thus shows visit concentration data. Between site variability  is for the IQR of annual average concentrations (N=309 sites), as shown in Table ___.",
+#         
+#           #"Distribution of site-specific IQR values for median visit concentrations (N = 309 site IQRs, each site has approximately 29 visits).", 
+#         col.names = c("",  "",
+#                       "Median (Range) IQR", 
+#                       "Max/Min IQR", 
+#                       "IQR"), 
+#         align = "r",   
+#         #format.args = list(big.mark = ",")
+#         ) %>%
+#   kable_styling() %>%
+#   add_header_above(c("Pollutant", "Instrument", "Within-Site Variability of Median Visit Conc's" = 2, "Between-Site Variability of Annual Avg Conc's" = 1))
+
+```
+
+ 
+
+
+boxplots
+
+```{r}
+
+
+# like table above, but formatted differently
+visit_conc <- stops %>%
+  group_by(pollutant, ufp_range_nm) %>%
+  summarize(
+    Q05 = quantile(value, 0.05),
+    Median = quantile(value, 0.50),
+    Q95 = quantile(value, 0.95),
+    )  
+ 
+```
+
+ 
+```{r}
+line_col <- "red"
+line_a <- 0.5
+
+```
+
+ 
+ 
+ 
+ 
+
+ 
+
+## Temporal Variability 
+
+notes   
+* note, plotting non-extreme values, otherwise can't see any trends in the plots    
+  - if on log scale, values <=0 are dropped (e.g., many for BC since aethalometer instrument is noisy)   
+* note that different sites were visited at different times, so there could be some spatial confounding   
+  
+
+* NanoScan (10-420 nm) has higher readings than discmini (10-700 nm) b/c it is more efficient at measuring the smallest particles due to the difference in technologies. The Nanoscan measures optical diameter after alcohol condensation to grow the particles, whereas the disk-mini measures electrical mobility diameter based on the current produced when the particles are captured on a oppositely charged surface.  The electrostatic method has lower detection efficiencies for these very small particles than does the condensation/optical method.
+
+by season 
+
+
+```{r, fig.height=12}
+# by month
+
+print("Median site visit concentrations by season. Lines connect median monthly concentrations.")
+
+stops %>%
+    mutate(month =month(time, label = T),
+            ufp_instrument = ifelse(ufp_instrument == "-", "NA", as.character(ufp_instrument)),
+           ufp_instrument = factor(ufp_instrument, levels = c( "P-TRAK", "Screened P-TRAK", "NanoScan", "DiSCmini", "-", "NA"))
+           ) %>%  
+    #calc stats for alternative boxplots
+    group_by(pollutant, ufp_range_nm, ufp_instrument, season) %>%
+    alt_boxplot(var = "value", min_q = low_boxplot_q, max_q = high_boxplot_q) %>% #View()
+    
+    ggplot(aes(x=season, fill=ufp_instrument)) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
+  facet_wrap(~pollutant, 
+             scales="free", nrow = 3) +
+    labs(y= "Value",
+         x="Season",
+         fill = "PNC Instrument"
+         )  
+
+ggsave(file = file.path(image_path, "SI", "temporal_season.png"), height = 8, width = 7)
+
+```
+
+
+by weekday
+
+```{r, fig.height=12}
+print("Median site visit concentrations by day of the week. Lines connect median monthly concentrations.")
+
+stops %>%
+  mutate(dow = ifelse(day %in% c("Sat", "Sun"), "Weekend", "Weekday"),
+         ufp_instrument = ifelse(ufp_instrument == "-", "NA", as.character(ufp_instrument)),
+           ufp_instrument = factor(ufp_instrument, levels = c( "P-TRAK", "Screened P-TRAK", "NanoScan", "DiSCmini", "-", "NA"))
+         ) %>%
+  #calc stats for alternative boxplots
+  group_by(pollutant, ufp_range_nm, ufp_instrument, dow) %>%
+  alt_boxplot(var = "value") %>%  
+  
+  ggplot(aes(x=dow, fill=ufp_instrument)) +
+  geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
+  facet_wrap(~pollutant, scales="free", nrow = 3) +
+  labs(y= "Value", x="Day",
+       fill = "PNC Instrument"
+       )
+
+ggsave(file = file.path(image_path, "SI", "temporal_day.png"), height = 8, width = 7)                 
+```
+
+by hour 
+
+```{r, fig.height=12}
+
+stops %>%
+  #don't include midnight, since little data here, and it makes it seem like instrument clocks were off
+  filter(hour !=0) %>%
+  mutate(hour = factor(hour, levels = c(4:23))) %>%
+    #calc stats for alternative boxplots
+    group_by(pollutant, ufp_instrument, hour) %>%
+    alt_boxplot(var = "value") %>%   
+    
+    ggplot(aes(x=hour, fill=ufp_instrument)) +
+    geom_boxplot(aes(ymin=Qmin, lower=Q25, middle=Q50, upper=Q75, ymax=Qmax), stat = "identity") + 
+     
+  facet_wrap(~pollutant+ufp_instrument, scales="free", nrow = 4) +
+  theme(legend.position = "none") +
+    
+    labs(y= "Value",
+         x= "Hour" 
+         )  
+
+ggsave(file = file.path(image_path, "SI", "temporal_hour.png"), height = 8, width = 8)                 
+```
+
+spaghetti plots
+ 
+```{r}
+"Site-specific pollutant concentrations over. Thin lines show site-specific smooth (loess) fits for median visit concentrations (N~29 visits/site). Black lines show the overall smooth trends for all of the sites."
+
+stops %>%
+  mutate(#ufp_range_nm = ifelse(ufp_range_nm == "-", "NA", ufp_range_nm)
+         ) %>%
+    ggplot(aes(x=time, y=value)) +
+       geom_smooth( se=F, size=0.1, alpha=0.8,
+                    aes(col=ufp_instrument, group=location), show.legend = F) +
+  #overall trend
+  geom_smooth(se=F, col="black") +
+  
+  facet_wrap(~pollutant+ufp_instrument, scales="free", nrow = 4) +
+    labs(y= "Value",
+         x= "Date",
+         col = "PNC Instrument"
+         )  
+
+ggsave(file = file.path(image_path, "SI", "spaghetti_plots.png"), height = 9, width = 9)                 
+```
+
+
+ 
+## ANOVA
+
+
+```{r}
+# using all of the observations to characterize variability 
+var_df <- data.frame()
+
+for(i in unique_pollutants2) {
+  # i=unique_pollutants2[1]
+  temp <- anovaVCA(value ~ location + day+ hour + season,
+           Data = as.data.frame(subset(stops, pollutant2 == i) ))$aov.tab  %>% # 
+    tidy() %>%
+    select(Variable = .rownames, DF, Percent = X.Total) %>%
+    mutate(DF = round(DF))
+  
+  names(temp)[names(temp) == "Percent"] <- i
+  
+  if(i==unique_pollutants2[1]) {
+    var_df <- temp
+    } else {
+                                    #only use DF from the first pollutant, as an exp
+      var_df <- left_join(var_df, select(temp, -DF))
+    }
+  }
+
+ 
+```
+
+```{r}
+var_df %>%
+  gather(pollutant, percent, 'BC (ng/m3)':'PNC (pt/cm3), Screened P-TRAK') %>%
+  filter(Variable != "total") %>%
+  mutate(
+    variability = ifelse(Variable == "location", "spatial",
+                  ifelse(Variable == "error", "residual", "temporal")
+                  ),
+    variability = factor(variability, levels = c("residual", "temporal", "spatial"))
+  ) %>%
+  group_by(variability, pollutant) %>%
+  summarize(
+    percent = sum(percent)
+  ) %>%
+  spread(pollutant, percent) %>%
+  kable(caption = "total variability categorized", digits = 0) %>%
+  kable_styling()
+
+
+
+```
+
+
+plot
+
+
+```{r}
+var_df %>%
+  gather(pollutant, percent, 'BC (ng/m3)':'PNC (pt/cm3), Screened P-TRAK') %>%
+  filter(Variable != "total") %>%
+  mutate(
+    Variable = factor(Variable, levels = c("error", "location", "season", "day", "hour")),
+    variability = ifelse(Variable == "location", "spatial",
+                  ifelse(Variable == "error", "residual", "temporal")
+                  ),
+    variability = factor(variability, levels = c("residual", "temporal", "spatial")),
+    pollutant = factor(pollutant, levels =
+                         c("PNC (pt/cm3), P-TRAK", "PNC (pt/cm3), Screened P-TRAK", "PNC (pt/cm3), NanoScan", "PNC (pt/cm3), DiSCmini", "NO2 (ppb)", "BC (ng/m3)", "PM2.5 (ug/m3)", "CO2 (ppm)"
+                           )
+                       )
+    ) %>%
+  ggplot(aes(x=variability, y=percent, fill=Variable)) + 
+  facet_wrap(~pollutant) + 
+  geom_bar(stat = "identity") + 
+  labs(fill = "",
+       x = "Variability", y = "Percent (%)"
+       ) 
+
+
+ggsave(file = file.path(image_path, "SI", "anova.png"), height = 9, width = 9)                 
+
+```
+
+
+
+
+ 
+ 
+
+ 
+
+# Annual averages
+
+* calculating a simple mean annual average using all the available site data 
+
+
+## Concentration Table
+
+```{r}
+annual <- stops %>%
+  left_join(instruments) %>% #View()
+  group_by(variable, pollutant, ufp_instrument, Instrument, location) %>%
+  summarize(value = mean(value)) %>%
+  ungroup() %>%
+  mutate(
+    pollutant2 = ifelse(grepl("PNC", pollutant), paste0(pollutant, ", ", ufp_instrument), as.character(pollutant ))
+  ) %>%
+  #add location lat/long
+  left_join(locations)
+
+```
+
+
+```{r}
+#table of distribution
+annual_conc <- annual %>%
+  mutate(
+    pollutant = as.character(pollutant),
+    pollutant = ifelse(grepl("PNC", pollutant), paste0(pollutant, ", ", ufp_instrument), pollutant)
+         ) %>%
+  #left_join(instruments, by = c("pollutant" = "pollutant2")) %>%
+  group_by(Pollutant=pollutant, Instrument
+           ) %>%
+  summarize(
+    Min = min(value),
+    Q05 = quantile(value, 0.05),
+    Q25 = quantile(value, 0.25),
+    Median = quantile(value, 0.50),
+    Q75 = quantile(value, 0.75),
+    Q95 = quantile(value, 0.95),
+    Max = max(value),
+    ) %>%
+  mutate(#'Q95/Q05' = round(Q95/Q05, 1),
+         'Max/Min' = round(Max/Min, 1),
+         #'IQR/Median' = round((Q75-Q25)/Median, 1)
+         ) 
+
+# save for use above. add this between site variability to within site variability table above
+saveRDS(annual_conc, file = file.path("Data", "Output", "annual_conc_table.rda"))
+
+annual_conc %>%
+  mutate_at(
+    vars(Min:Max), ~ifelse(grepl("PNC|CO|BC", Pollutant), 
+                           format(., digits=0, scientific = F, big.mark = ","),
+                           format(., digits=2, scientific = F, big.mark = ",")
+                           #round(.,), 
+                           #round(.,1)
+                           )
+  ) %>%
+  
+  kable(caption = "Distribution of annual average pollutant concentrations at monitoring sites (N = 309)") %>%
+  kable_styling()
+  
+```
+
+ 
+```{r}
+print("Annual average site concentrations")
+  
+#boxplots
+annual %>%
+    mutate(#ufp_instrument = ifelse(ufp_instrument == "-", "NA", as.character(ufp_instrument)),
+           
+            ufp_instrument = ifelse(ufp_instrument == "-", "NA", as.character(ufp_instrument)),
+           ufp_instrument = factor(ufp_instrument, levels = c( "P-TRAK", "Screened P-TRAK", "NanoScan", "DiSCmini", "-", "NA")),
+           ) %>%
+
+  ggplot(aes(x=pollutant, y=value, fill=ufp_instrument)) + 
+  facet_wrap(~pollutant, scales= "free") + 
+  geom_boxplot() +
+  labs(x="Pollutant",
+       y = "Value",
+       fill = "PNC Instrument"
+       )
+
+ggsave(file.path(image_path, "SI", "annual_avg.png"), height = 6, width = 7)
+
+```
+
+
+
+## Pollutant comparisons
+
+```{r}
+
+cor_df <- annual %>%
+  mutate(pollutant = if_else(grepl("PNC", pollutant), 
+                            paste0(pollutant, "\n", ufp_instrument),
+                            as.character(pollutant)
+                            )
+         ) %>%
+  select(pollutant, location, value) %>%  
+  spread(pollutant, value) %>% 
+  select(-location) 
+  
+```
+
+```{r}
+#function colors upper panel by correlation value
+# source: https://stackoverflow.com/questions/45873483/ggpairs-plot-with-heatmap-of-correlation-values 
+
+color_cor <- function(data, mapping, method="p", use="pairwise", alpha=0.5, ...){
+
+              # grab data
+              x <- eval_data_col(data, mapping$x)
+              y <- eval_data_col(data, mapping$y)
+
+              # calculate correlation
+              corr <- cor(x, y, method=method, use=use)
+
+              # calculate colour based on correlation value
+              # Here I have set a correlation of minus one to blue, 
+              # zero to white, and one to red 
+              # Change this to suit: possibly extend to add as an argument of `my_fn`
+              colFn <- colorRampPalette(c("blue", "white", "red"), interpolate ='spline')
+              fill <- colFn(100)[findInterval(corr, seq(-1, 1, length=100))]
+
+              ggally_cor(data = data, mapping = mapping, 
+                         #don't include stars if correlations "sign"
+                         stars = FALSE,
+                         digits=2,
+                         ...) + 
+                theme_void() +
+                theme(panel.background = element_rect(fill=alpha(fill, alpha)))
+            }
+```
+
+
+```{r, fig.height=12, fig.width=10}
+print("Annual average pollutant correlations")
+
+# correlation plot
+ggpairs(cor_df, 
+        upper = list(continuous = color_cor),
+        lower = list(continuous = wrap("smooth_loess", alpha=0.2)),
+        ) + #scale_x_continuous(labels = scales::scientific) 
+  scale_x_continuous(guide = guide_axis(check.overlap = TRUE))
+
+ggsave(file.path(image_path, "Other", "correlations_estimtates.png"), height = 11, width = 11)
+
+```
+
+ 
+
+
+## Maps 
+
+
+```{r}
+#  
+annual2 <- st_as_sf(annual, coords = c("longitude", "latitude"),  remove = F, crs=crs_deg) #%>% st_transform(crs = crs_m)
+
+unique_p <- distinct(annual[c("pollutant", "ufp_instrument")])
+
+```
+
+
+```{r, fig.height=18}
+#non-UFPs. each pollutant has its own legend
+
+print("Annual average pollutant concentrations at monitoring sites (N=309).")
+
+p <- list() 
+
+for(i in seq_along(non_ufp_p)) {
+   #i=1
+   
+  p[[i]] <- ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
+            alpha=0.1,
+            #reduce/eliminate outline
+            lwd = 0.1,
+            ) +
+    
+    #annual averages
+    geom_point(data=filter(annual, pollutant == non_ufp_p[i]),
+             aes(x=longitude, y=latitude, col=value), 
+             inherit.aes = F, size=2)  +
+    scale_color_gradient(name = "Conc",
+                        low = "yellow", high = "red",
+                        ) +
+    facet_wrap(~pollutant)  + 
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank()
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       #labels = map_y_labels
+                       labels = format(map_y_labels,digits = 1,
+                                       nsmall = 1
+                                       )
+                       ) +
+    #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 1)
+         ) +
+    #add attribution/reference to bottom left
+    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+                ),
+            size=2.5
+            ) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = ""
+       ) 
+  
+  p[[i]]
+  
+  }
+
+ggarrange(plotlist = p, ncol = 2, nrow = 2)
+
+ggsave(file.path(image_path, "SI", "map_non_ufp.png"),  height = 13, width = 11)
+
+```
+
+* UFP predictions seem to vary depending on what instrument was used?    
+  * note, people wouldn't normally use screened PTRAKS (36-1,000 nm particles) to measure "UFPs"
+
+
+-all UFP instruments (for SI)
+  
+
+```{r}
+# ufp_instruments
+
+lapply(ufp_instruments, function(x){
+  # x = ufp_instruments[1]
+  
+  ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
+            alpha=0.1, lwd = 0.1) +
+    
+    #annual averages
+    geom_point(data= filter(annual, pollutant == ufp_p, ufp_instrument == x),
+             aes(x=longitude, y=latitude, col=value), inherit.aes = F, size=2)  +
+  scale_color_gradient(name = "Conc", low = "yellow", high = "red") +
+    facet_wrap(~pollutant+ufp_instrument)  + 
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank(),
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1, nsmall = 1)
+                       ) +
+  #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 1)) +
+  #add attribution/reference to bottom left
+    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+                ),
+            size=2.5
+            ) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = ""
+       )
+  }) %>%
+  ggarrange(plotlist = .)
+
+ggsave(file.path(image_path, "SI", "map_ufp.png"),  height = 13, width = 11)
+
+```
+
+
+```{r, fig.height=18, eval=F}
+#UFPs. these share the same legend
+
+ggmap(ggmap = map0, darken = c(.5, "white")) +
+    #monitoring area
+    geom_sf(data=monitoring_area_shp, inherit.aes = F, aes(fill = "Monitoring Area"),
+            alpha=0.1, lwd = 0.1) +
+    
+    #annual averages
+    geom_point(data=filter(annual, pollutant == ufp_p),
+             aes(x=longitude, y=latitude, col=value), 
+             inherit.aes = F, size=2,
+             )  +
+  scale_color_gradient(name = "Conc",
+                       low = "yellow", high = "red",
+                       ) +
+    facet_wrap(pollutant+ufp_instrument, nrow = 2)  + 
+    # add scale & N arrow to top rught
+    annotation_scale(location = "tr") +
+    annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
+
+    annotation_north_arrow(location = "tr",
+                           #point towards North Pole
+                           which_north = "true",
+                           pad_y = unit(0.5, "in"),
+                           style = north_arrow_fancy_orienteering
+                           ) +
+  theme_bw() +
+  theme(
+    legend.justification=c(0,1),  
+    legend.position=c(0,1),  
+    legend.background =  element_blank(),
+    ) +
+    coord_sf(expand = F) +
+    scale_x_continuous(breaks = map_x_labels, labels = map_x_labels ) +
+    scale_y_continuous(breaks = map_y_labels, 
+                       labels = format(map_y_labels,digits = 1, nsmall = 1)
+                       ) +
+  #arrange legend order
+  guides(col = guide_colorbar(order = 2),
+              fill = guide_legend(order = 1)) +
+  #add attribution/reference to bottom left
+    geom_text(aes(x=-Inf, y=-Inf, hjust=-0.01, vjust=-0.3,
+                label= "Map tiles by Stamen Design, under CC BY 3.0. \nData by OpenStreetMap, under ODbL."
+                ),
+            size=2.5
+            ) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = ""
+       ) 
+
+ggsave(file.path(image_path, "SI", "map_ufp.png"),  height = 13, width = 11)
+
+```
+
+
+  
+
+
+  
+
+
+
+
+```{r} 
+# Session Info
+# # sessionInfo()
+
+```
+ 
+ 
+```{r, eval=F}
+# save package references to reference manager #https://bookdown.org/yihui/rmarkdown-cookbook/write-bib.html
+##1.
+knitr::write_bib(c("broom", "colorspace", "cowplot", "fmsb", "forcats", "GGally", "ggpmisc", "ggpp", "ggpubr", "gstat", "knitr", "spData", "units" 
+                   ), 
+                 file = file.path("Data", "Output", "packages_v2.bib"))
+##2. import this file into reference manager 
+
+```
+
+
+
+

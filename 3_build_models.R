@@ -43,25 +43,29 @@ cov_test <- readRDS(file.path("..", "..", "ACT HEI Supp", "act_hei_aim1a", "Outp
 ###########################################################################################
 # CALCULATE ANNUAL AVG
 ###########################################################################################
-
-annual <- stops0 %>%
+ annual <- stops0 %>%
   group_by(variable, location) %>%
+  #winsorize median values 
+  # mutate(
+  #   wind_median_value = ifelse(median_value == max(median_value), max(median_value[median_value!=max(median_value)]),
+  #                              ifelse(median_value == min(median_value), min(median_value[median_value!=min(median_value)]),
+  #                                     median_value
+  #                                     )),
+    # q05win_median_value = ifelse(median_value > quantile(median_value, 1-trim_quantile), quantile(median_value, 1-trim_quantile), 
+    #                              ifelse(median_value < quantile(median_value, trim_quantile), quantile(median_value, trim_quantile),
+    #                                     median_value))
+  #) %>%
+  winsorize_fn(value = "median_value") %>%  
   
-  #windsorize median values - replace min & max w/ 2nd smallest or largest value, respectively
-  mutate(
-    wind_median_value = ifelse(median_value == max(median_value), max(median_value[median_value!=max(median_value)]),
-                               ifelse(median_value == min(median_value), min(median_value[median_value!=min(median_value)]),
-                                      median_value
-                                      ))) %>% 
-  #filter(location == "MS0505", variable == "ma200_ir_bc1") %>% 
-  #arrange(median_value) %>% View()
   summarize(
     mean_of_medians = mean(median_value),
     median_of_means = median(mean_value),
     median_of_medians = median(median_value),
     mean_of_means = mean(mean_value),
     
-    mean_of_wind_medians = mean(wind_median_value)
+    #mean_of_wind_medians = mean(wind_median_value),
+    mean_of_win_medians = mean(win_value),
+    #mean_of_q05_win_medians = mean(q05win_median_value)
   ) %>%
   gather("annual", "value", contains(c("mean", "median"))) %>%
   ungroup()
@@ -360,32 +364,33 @@ model_performance <- mclapply(group_split(predictions, variable, annual, out_of_
 
 # table
 model_performance %>%
-  filter(annual %in% c("mean_of_medians", "mean_of_wind_medians")) %>%
+  filter(annual %in% c("mean_of_medians", "mean_of_win_medians")) %>%
   select(-c(#annual, 
             no_sites)) %>%
   variable_relabel() %>%
-  
+  select(-ufp_range_nm) %>%
+  select(c(variable, ufp_instrument, everything())) %>%
+
   kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
-        col.names = c("Pollutant", "Annual", "Out-of-Sample Set", "RMSE", "MSE-based R2", "Regression-based R2", "UFP Size (nm)")
+        col.names = c("Pollutant", "PNC Instrument", "Annual", "Out-of-Sample Set", "RMSE", "MSE-based R2", "Regression-based R2")
         ) %>%
   kable_styling()
 
-#plo
 
 ##################################################################################################
 # TEST - COMPARE MODEL PERFORMANCES
 
-model_performance %>%
-  filter(annual %in% c("mean_of_medians", "mean_of_wind_medians")) %>%
-  variable_relabel() %>%
-  gather(performance, value, MSE_based_R2, RMSE) %>%
-  
-  ggplot(aes(x=out_of_sample, y=value, col=annual, shape=ufp_range_nm)) + 
-    facet_wrap(~variable+performance, scales="free") + 
-    geom_point() + 
-  labs(title = "model performance of mean of medians vs mean of windsorized medians")
-
-ggsave(file.path(image_path, "Temp", "Windsorized", "model_performance.png"), height = 8, width = 11)
+# model_performance %>%
+#   filter(annual %in% c("mean_of_medians", "mean_of_win_medians")) %>%
+#   variable_relabel() %>%
+#   gather(performance, value, MSE_based_R2, RMSE) %>%
+#   
+#   ggplot(aes(x=out_of_sample, y=value, col=annual, shape=ufp_range_nm)) + 
+#     facet_wrap(~variable+performance, scales="free") + 
+#     geom_point() + 
+#   labs(title = "model performance of mean of medians vs mean of windsorized medians")
+# 
+# ggsave(file.path(image_path, "Temp", "Windsorized", "model_performance.png"), height = 8, width = 11)
   
   
 ##################################################################################################
@@ -393,61 +398,13 @@ ggsave(file.path(image_path, "Temp", "Windsorized", "model_performance.png"), he
 ##################################################################################################
 
 model_performance %>%
-  #filter(annual %in% c("mean_of_medians", "mean_of_wind_medians")) %>%
+  #filter(annual %in% c("mean_of_medians", "mean_of_win_medians")) %>%
   #select(-"reg_based_R2") %>%
   write.csv(., file.path("Data", "Output", "Predictions", "model_performance.csv"), row.names = F)
 
 
 
 
-##################################################################################################
-# TEST
-##################################################################################################
-# summarize model performance
-
-test <- read.csv(file.path("Data", "Output", "Predictions", "model_performance.csv"))
-
-test %>%
-  filter(annual == "mean_of_medians") %>%
-  select(-c(annual, no_sites)) %>%
-  variable_relabel() %>%
-  
-  kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
-        col.names = c("Pollutant", "Out-of-Sample Set", "RMSE", "MSE-based R2", "Regression-based R2", "UFP Size (nm)")
-  ) %>%
-  kable_styling()
-  # filter(annual == "mean_of_medians") %>%
-  # mutate(
-  #   variable = ifelse(grepl("ns_total|pmdisc_|screen", variable), "ufp", as.character(variable))
-  # ) %>%
-  # group_by(variable) %>%
-  # summarize(
-  #   RMSE = paste(range(RMSE), collapse = " - "),
-  #   MSE_based_R2 = paste(range(MSE_based_R2), collapse = " - ")
-  # )
-
-
-##################################################################################################
-# test %>%
-#   filter(annual == "mean_of_medians") %>%
-#   select(-c("annual", "reg_based_R2", "no_sites")) %>%
-#   variable_relabel() %>%
-#   # mutate(
-#   #   variable = factor(variable, levels = c("UFP (pt/cm3)",
-#   #                                "BC (ng/m3)",
-#   #                                "Neph (bscat/m)",  "PM2.5 (ug/m3)",
-#   #                                "NO2 (ppb)",
-#   #                                "CO2 (ppm)",
-#   #                                "CO (ppm)"
-#   #                                )
-#   # )) %>%
-#   mutate(RMSE = round(RMSE, 1))  %>%
-#   kable(caption = "Model performances for annual mean of medians concentrations. N=278 for cross-validation set; N=31 for test set.",
-#         col.names = c("Pollutant", "Out-of-Sample Set", "RMSE", "MSE-based R2", "UFP Size (nm)")
-#   ) %>%
-#   kable_styling()
-
-
-
+ 
 
  

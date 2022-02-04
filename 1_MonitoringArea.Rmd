@@ -179,20 +179,19 @@ water_shp <- read_sf(file.path("~", "OneDrive - UW", "Documents", "School", "PhD
 water_shp1 <- water_shp %>% 
   st_make_valid() %>% #st_buffer(0)
   # only keep water in the region - make file smaller
-  st_intersection(., st_transform(st_buffer(st_transform(monitoring_area_shp2, m_crs), 10e3), project_crs))
+  st_intersection(., st_transform(st_buffer(st_transform(monitoring_area_shp2, m_crs), 10e3), project_crs)) %>%
+  # only keep large bodies of water
+  filter(grepl("Puget Sound|Lake Washington|Lake Sammamish|Lake Union", WB_GNIS_NM)) %>%
+  st_union()
 
 saveRDS(water_shp1, file.path("Data", "Output", "GIS", "water_nearby_shp.rda"))
-
 #st_write(water_shp1, file.path("Data", "Output", "GIS", "water_nearby.shp"))
 
-
 # shapefile of monitoring land (not including water)
-monitoring_land <- st_difference(monitoring_area_shp2,
-                      st_union(water_shp1)
-                       )  
+monitoring_land <- st_difference(monitoring_area_shp2, st_union(water_shp1))  
 
 saveRDS(monitoring_land, file.path("Data", "Output", "GIS", "monitoring_land_shp.rda"))
-#st_write(monitoring_land, file.path("Data", "Output", "GIS", "monitoring_land.shp"))
+#st_write(monitoring_land, file.path("Data", "Output", "GIS", "monitoring_land.shp"), append=FALSE)
 
 ```
 
@@ -675,9 +674,12 @@ title: "Mobile monitoring of traffic-related air pollution for a prospective coh
 
 
 
-## option 1
 
-```{r}
+
+```{r, eval=F }
+
+## old option 
+
 # create background map for grid/mapping
 one_route_shp <- routes_shp %>%
   filter(Route %in% c(1,2, 9))
@@ -704,11 +706,7 @@ map0_zoom <- suppressMessages(get_stamenmap(bbox = bbox2,
 ## usage example: 
 #map0_zoom #%>% ggmap()  
 
-```
-
-
-
-```{r, fig.height=10}
+ 
 
 map0_zoom + 
   #route lines
@@ -724,10 +722,9 @@ map0_zoom +
 
 ```
 
-## option 2
+## option 1
 
 ```{r}
-# TEST
 
 #basic outline shapefile for near UW study area
 kc_shp <- read_sf(file.path(
@@ -778,7 +775,7 @@ ggplot() +
             ), size=text_size, 
             col = "#4b2e83"
             ) +
-  geom_label(aes(label = c("UFP\nBC\nPM2.5\nNO2\nCO2"),
+  geom_label(aes(label = c("PNC\nBC\nNO2\nPM2.5\nCO2"),
             #x=-122.03,
             x=-121.935, 
             y=47.621, hjust=0,  
