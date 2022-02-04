@@ -288,10 +288,7 @@ add_season <- function(dt, .date_var) {
 }
 
 ######################################################################################################################
-# windsorizes a value
-# value = "median_value"
-# dt = stops0
-
+# returns a new variable, 'win_value', which winsorizes an original variable, 'value', based on a quantile from the original variable
 winsorize_fn <- function(dt, value, trim_quantile =0.05) {
 
   #dt <- rename(dt, value = value)
@@ -299,20 +296,10 @@ winsorize_fn <- function(dt, value, trim_quantile =0.05) {
   dt1 <- dt %>%
   group_by(variable, location) %>%
     mutate(
-    # wind_median_value = ifelse(median_value == max(median_value), max(median_value[median_value!=max(median_value)]),
-    #                            ifelse(median_value == min(median_value), min(median_value[median_value!=min(median_value)]),
-    #                                   median_value
-    #                            )),
-    # win_value = ifelse(value > quantile(value, 1-trim_quantile), quantile(value, 1-trim_quantile), 
-    #                              ifelse(value < quantile(value, trim_quantile), quantile(value, trim_quantile),
-    #                                     value))
       win_value = ifelse(!!as.symbol(value) > quantile(!!as.symbol(value), 1-trim_quantile), quantile(!!as.symbol(value), 1-trim_quantile), 
                          ifelse(!!as.symbol(value) < quantile(!!as.symbol(value), trim_quantile), quantile(!!as.symbol(value), trim_quantile),
                                 !!as.symbol(value)))
     )
-  
-  #names(dt1)[names(dt1) == value] <- value
-  
   
   }
 

@@ -46,15 +46,6 @@ cov_test <- readRDS(file.path("..", "..", "ACT HEI Supp", "act_hei_aim1a", "Outp
  annual <- stops0 %>%
   group_by(variable, location) %>%
   #winsorize median values 
-  # mutate(
-  #   wind_median_value = ifelse(median_value == max(median_value), max(median_value[median_value!=max(median_value)]),
-  #                              ifelse(median_value == min(median_value), min(median_value[median_value!=min(median_value)]),
-  #                                     median_value
-  #                                     )),
-    # q05win_median_value = ifelse(median_value > quantile(median_value, 1-trim_quantile), quantile(median_value, 1-trim_quantile), 
-    #                              ifelse(median_value < quantile(median_value, trim_quantile), quantile(median_value, trim_quantile),
-    #                                     median_value))
-  #) %>%
   winsorize_fn(value = "median_value") %>%  
   
   summarize(
@@ -125,10 +116,7 @@ saveRDS(annual, file.path("Data", "Output", "annual.rda"))
 # COMMON VARIABLES
 ###########################################################################################
 cov_names <- cov_train %>%
-  select(log_m_to_a1:last_col(),
-         # #test, see how much the bus covariate makes a difference. # not much. 
-         # -contains(c("bus_", "m_to_bus"))
-         ) %>%
+  select(log_m_to_a1:last_col()) %>%
   names()
 
 pls_comp_n <- 3 #note, that PM2.5 & no2 did a tiny bit better w/ 4 PLS components
@@ -137,13 +125,9 @@ save(pls_comp_n, file = file.path("Data", "Output", "Objects", "pls_comp_n.rda")
 #k-folds for CV
 k <- 10
 
-#var_names <- unique(annual$variable)
-
 ##################################################################################################
 # CREATE RANDOM VALIDATION FOLDS FOR TRAINING SET
 ##################################################################################################
-# df = annual_train
-# k.=k
 
 add_random_fold <- function(df, k.=k) {
   # #make sure different variables, annual estimates, etc. receive same fold designation
@@ -219,7 +203,6 @@ uk_pls <- function(new_data, modeling_data, cov_names. = cov_names, pls_comp_n. 
   m.uk <- fit.variogram(v.uk, vgm(c("Exp", "Sph", "Mat")) )
   ##make sure Exp/Sph range estimate is at least 0 when little/no correlation in the data 
   m.uk$range[2] <- max(m.uk$range[2], 1)
-  #plot(v.uk, m.uk)
   
   # fit UK to the modeling data and predict at the new data locations
   uk_model <- krige(formula = uk_formula, st_transform(modeling_data_scores, lambert_proj), 
@@ -257,9 +240,6 @@ saveRDS(uk_pls, file.path("Data", "Output", "Predictions", "uk_pls_model.rda"))
 # OUTPUTS
 ## a dataframe with cross-validated predictions
 
-# x = group_split(annual_train, variable, annual)[[1]]
-# fold_name = "random_fold"
-
 do_cv <- function (x, fold_name = "random_fold") {
   #code to make sure this fn works even if folds don't have all numbers in a sequence (e.g., if too few sites)
   k = sort(unique(x[[fold_name]]))
@@ -267,7 +247,6 @@ do_cv <- function (x, fold_name = "random_fold") {
   df <- data.frame()
   
   for(f in k) {
-    #f = k[2]
     modeling_data0 = filter(x, !!as.symbol(fold_name) != f)
     new_data0 = filter(x, !!as.symbol(fold_name) == f)
     
@@ -320,17 +299,13 @@ saveRDS(train_validation_models, file.path("Data", "Output", "Predictions", "tra
 
 
 # combine predictions
-predictions <- rbind(cv_predictions, test_predictions) #%>% select(variable, location, annual, value, prediction, out_of_sample) 
+predictions <- rbind(cv_predictions, test_predictions) 
 
 saveRDS(predictions, file.path("Data", "Output", "Predictions", "monitoring_location_predictions.rda"))
 
 ##################################################################################################
 # MODEL EVALUATION
 ##################################################################################################
-
-# dt = group_split(predictions, variable, annual, out_of_sample)[[1]]
-# prediction = "prediction"
-# reference = "value"
 
 # Fn returns RMSE and MSE-based R2 for a given dataset
 validation_stats <- function(dt, prediction = "prediction", reference = "value"){
@@ -365,8 +340,7 @@ model_performance <- mclapply(group_split(predictions, variable, annual, out_of_
 # table
 model_performance %>%
   filter(annual %in% c("mean_of_medians", "mean_of_win_medians")) %>%
-  select(-c(#annual, 
-            no_sites)) %>%
+  select(-c(no_sites)) %>%
   variable_relabel() %>%
   select(-ufp_range_nm) %>%
   select(c(variable, ufp_instrument, everything())) %>%
@@ -398,8 +372,6 @@ model_performance %>%
 ##################################################################################################
 
 model_performance %>%
-  #filter(annual %in% c("mean_of_medians", "mean_of_win_medians")) %>%
-  #select(-"reg_based_R2") %>%
   write.csv(., file.path("Data", "Output", "Predictions", "model_performance.csv"), row.names = F)
 
 
