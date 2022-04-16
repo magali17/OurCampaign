@@ -36,9 +36,6 @@ pacman::p_load(knitr, kableExtra,
 theme_set(theme_bw())
 theme_update(legend.position = "bottom")
 
-
- 
-
 ```
 
 # Load data
@@ -48,8 +45,7 @@ theme_update(legend.position = "bottom")
 ## ufp
 ufp_r2 <- readxl::read_xlsx(file.path("..", "Manuscript", "Mean UFP & BC comparison.xlsx"), sheet = 3) %>%
   #only include studies that have been fully entered into excel or qualify
-  filter(Include_in_analysis == TRUE) %>%
-  select(-Include_in_analysis) %>%
+  filter(Include_in_analysis == TRUE) %>% select(-Include_in_analysis) %>%
   mutate(
     Mean_Model_R2 = as.numeric(Mean_Model_R2),
     #shorten names
@@ -64,8 +60,7 @@ ufp_r2 <- readxl::read_xlsx(file.path("..", "Manuscript", "Mean UFP & BC compari
 ## bc
 bc_r2 <- readxl::read_xlsx(file.path("..", "Manuscript", "Mean UFP & BC comparison.xlsx"), sheet = 4) %>%
    #only include studies that have been fully entered into excel or qualify
-  filter(Include_in_analysis == TRUE) %>%
-  select(-Include_in_analysis) %>%
+  filter(Include_in_analysis == TRUE) %>% select(-Include_in_analysis) %>%
   mutate(
     #only keep few digits - for some reason some values have many decimal #s
     Model_R2 = ifelse(nchar(Model_R2) > 9, substr(Model_R2, 1,4), Model_R2),
@@ -75,12 +70,10 @@ bc_r2 <- readxl::read_xlsx(file.path("..", "Manuscript", "Mean UFP & BC comparis
     Location = gsub("Rotterdam", "RTM", Location),
     
    # Sampling_type = factor(Sampling_type, levels = c("Long-term Stationary", "Short-term Stationary", "Short-term Non-stationary"))
-
     ) %>%
   arrange(Sampling_type, Study)%>%
   #remove white spaces from start & end of strings
   mutate_if(is.character, ~str_trim(.))
-
 
 common_r2_names <-str_subset(string = names(bc_r2),pattern =  paste0(names(ufp_r2), collapse = "|"), )   
 
@@ -155,7 +148,6 @@ image_path <- file.path("..", "Manuscript", "Images")
 - Our study model performance is the avg R2 for the primary analysis, using 10-fold CV and test site predictions.
 
 
-
 ```{r}
 "Model R2 estimates from other studies"
 
@@ -168,8 +160,7 @@ ufp_r2 %>%
     Sampling_type = gsub(" ", "\n", Sampling_type)
     ) %>% 
   group_by(Pollutant) %>%
-  mutate(this_study_r2 = Mean_Model_R2[grepl("Blanco", Study)],
-         ) %>%   
+  mutate(this_study_r2 = Mean_Model_R2[grepl("Blanco", Study)]) %>%   
   
   ggplot(data=., aes(x=Sampling_type, y=Mean_Model_R2, label = Location,)) +
   geom_line(alpha=0.4) +
@@ -456,8 +447,8 @@ ufp_r2 %>%
   
   ### --> check that these are correct in the end
   pack_rows("Long-term Stationary", 1, 5) %>%
-  pack_rows("Short-term Non-stationary", 6, 14) %>%
-  pack_rows("Short-term Stationary", 15, 23) %>%
+  pack_rows("Short-term Non-stationary", 6, 15) %>%
+  pack_rows("Short-term Stationary", 16, 23) %>%
   add_footnote(., label = c("Location: AMS = Amsterdam; MMa = Maastricht; RTM = Rotterdam; UT = Utrecht"),
                 notation = "none"
                 ) %>%
@@ -471,7 +462,6 @@ ufp_r2 %>%
 ```{r}
 bc_r2 %>%
  select(
-   
    ## update if change study order!
    #Sampling_type,
    

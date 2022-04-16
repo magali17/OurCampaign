@@ -1,4 +1,10 @@
 ###########################################################################################
+# NOTES
+###########################################################################################
+# mclapply is used in this code, but it this is not supported on windows when mc.cores >1. 
+# windows users may want to consider replacing mclapply() with lapply() instead
+
+###########################################################################################
 # SETUP
 ###########################################################################################
 # Clear workspace of all objects and unload all extra (non-base) packages
@@ -73,6 +79,10 @@ annual <-rbind(select(annual_train, all_of(keep_names)), select(annual_test, all
 
 saveRDS(annual, file.path("Data", "Output", "annual.rda"))
 
+# for sharing 
+annual %>%
+  select(variable, location, longitude, latitude, annual, value) %>%
+  write.csv(., file.path("Data", "Output", "annual.csv"), row.names = F)
 
 
 ###########################################################################################
@@ -302,6 +312,13 @@ saveRDS(train_validation_models, file.path("Data", "Output", "Predictions", "tra
 predictions <- rbind(cv_predictions, test_predictions) 
 
 saveRDS(predictions, file.path("Data", "Output", "Predictions", "monitoring_location_predictions.rda"))
+
+## for sharing
+predictions %>%
+  left_join(select(annual, location, longitude, latitude)) %>% 
+  select (location, longitude, latitude, variable, annual, value, prediction) %>%# View()
+  write.csv(., file.path("Data", "Output", "Predictions", "monitoring_location_estimates_and_predictions.csv"), row.names = F)
+
 
 ##################################################################################################
 # MODEL EVALUATION

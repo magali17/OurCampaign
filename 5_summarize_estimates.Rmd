@@ -167,9 +167,14 @@ ptrak_bin_range <- c("20-36 nm", "36-1,000 nm")
  stops <- stops0.1 %>%
   group_by(variable, location) %>%
   #winsorize median values  
-  winsorize_fn(value = "value") %>% 
-  ungroup()
-  
+  winsorize_fn(value = "value") %>%  
+  ungroup() %>%
+  select(-value) %>%
+  #use winsorized values for all subsequent data description
+  rename(value=win_value)
+ 
+#save for future analyses with winsorized values
+saveRDS(stops, file.path("Data", "Output", "stop_data_win_medians.rda"))
 
 ```
 
@@ -1033,7 +1038,7 @@ for(i in seq_along(non_ufp_p)) {
                         low = "yellow", high = "red",
                         ) +
     facet_wrap(~pollutant)  + 
-    # add scale & N arrow to top rught
+    # add scale & N arrow to top right
     annotation_scale(location = "tr") +
     annotation_scale(location = "tr", unit_category ="imperial", pad_y = unit(0.55, "cm")) +
 

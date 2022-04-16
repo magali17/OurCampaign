@@ -26,7 +26,7 @@
 
 # EXAMPLE OF HOW TO USE THIS PROGRAM
 # in a terminal open to the R program project directory, type: rscript coding_example.R <covariate_file_path> <prediction_directory> <prediction_file_format>
-# rscript coding_example.R data/dr0311_grid_covars.rda output rda 
+# rscript 4_prediction_program.R Data/Original/Geocovariates/dr0311_grid_covars.rda output/Predictions/grid csv 
 
 ################################################################################
 # SETUP
@@ -40,7 +40,8 @@ if (!is.null(sessionInfo()$otherPkgs)) {
 }
 
 # load the required libraries for: plotting, modeling, spatial features, script timing
-pacman::p_load(tidyverse, ggpubr, pls, gstat, sf, ggspatial, tictoc)
+if (!require("pacman")) {install.packages("pacman")}
+pacman::p_load(tidyverse, ggpubr, pls, gstat, sf, ggspatial, tictoc, tools)
 
 # report how long script takes to run
 tic()
@@ -64,6 +65,7 @@ if (length(user_arguments) !=3) {
 
 # new covariate file
 covariate_file_path <- user_arguments[1]
+cov_ext <- file_ext(covariate_file_path)
 
 #where predictions should be saved
 prediction_directory <- user_arguments[2]
@@ -76,7 +78,10 @@ prediction_file_format <- tolower(user_arguments[3])
 ###########################################################################################
 # UPLOAD THE NEW DATASET WHERE PREDICTIONS ARE DESIRED
 ###########################################################################################
-dt0 <- readRDS(covariate_file_path)
+if(cov_ext == "rda") {dt0 <- readRDS(covariate_file_path)}
+if(cov_ext == "csv") {dt0 <- read_csv(covariate_file_path)}
+
+if(!cov_ext %in% c("csv", "rda")) {stop("Error. Covariate file must be a CSV or RDA file")}
 
 ###########################################################################################
 # UPLOAD MODELING DATA
@@ -94,7 +99,8 @@ cov_names <- select(annual, log_m_to_a1:last_col()) %>%
   names()
 
 # load a spatial file of the original monitoring area to assess spatial extrapolation later
-monitoring_area <- readRDS(file.path("Data", "Output", "GIS", "monitoring_land_shp.rda"))  
+monitoring_area <- readRDS(file.path("Data", "Output", "GIS", "monitoring_land_zero_water_shp.rda" #"monitoring_land_shp.rda"
+                                     ))  
 lat_long_crs <- 4326
 
 ###########################################################################################

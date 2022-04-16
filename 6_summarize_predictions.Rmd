@@ -369,7 +369,7 @@ mm_predictions %>%
   geom_abline(slope = c(1, 0.75, 1.25), intercept = 0, alpha=0.2, linetype=2) +
   geom_label(aes(x=Inf, y=Inf, label = "1-1"), vjust = "inward", hjust = "inward") +
   geom_point(alpha=0.3) + 
-  geom_smooth(method = "lm") +
+  geom_smooth(method = "lm", se=F) +
   theme(aspect.ratio = 1) + 
   labs(x = "Estimate", y= "Prediction")
   
