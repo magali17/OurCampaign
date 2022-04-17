@@ -19,14 +19,15 @@
 # The output is a dataset with annual average air pollution predictions (UFP, BC, NO2, PM2.5 and CO2) for the locations with geographic covariates. 
 # Plots and maps to summarize the resulting predictions are also included.
 
-# ERROR MESSAGES
+# ERROR/WARNING MESSAGES
 # Error messages occur if:
 #   1. three arguments are not included when running this program
 #   2. there are locations with missing covariate values or missing covariates altogether that are required for the prediction models to run
 
 # EXAMPLE OF HOW TO USE THIS PROGRAM
 # in a terminal open to the R program project directory, type: rscript coding_example.R <covariate_file_path> <prediction_directory> <prediction_file_format>
-# rscript 4_prediction_program.R Data/Original/Geocovariates/dr0311_grid_covars.rda output/Predictions/grid csv 
+# Rscript 4_prediction_program.R Data/Original/Geocovariates/dr0311_grid_covars.rda output/Predictions/grid csv 
+# Rscript 4_prediction_program.R Data/Original/Geocovariates/dr0357_cohort_covar_20220404.csv Data/Output/Predictions/Cohort csv
 
 ################################################################################
 # SETUP
@@ -186,9 +187,10 @@ if(any(has_missing_values$true_or_false) == TRUE) {
   covariates_with_missingness <- filter(has_missing_values, true_or_false==TRUE) %>%
     pull(rowname)
   
-  error_msg <- paste("The following covariates have missing values:", paste(covariates_with_missingness, collapse = ", "), ". Please fix this before continuing.")
+  error_msg <- paste("The following covariates have 1+ rows with missing values:", paste(covariates_with_missingness, collapse = ", "), ". These rows will have missing predictions.")
   
-  stop(error_msg)
+  print(error_msg)
+  #stop(error_msg)
 }
 
 # 3. print a 'pass' message if all of the covariates are present and there are no locations with missing values
