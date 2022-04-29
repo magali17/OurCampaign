@@ -26,7 +26,7 @@
 
 # EXAMPLE OF HOW TO USE THIS PROGRAM
 # in a terminal open to the R program project directory, type: rscript coding_example.R <covariate_file_path> <prediction_directory> <prediction_file_format>
-# Rscript 4_prediction_program.R Data/Original/Geocovariates/dr0311_grid_covars.rda output/Predictions/grid csv 
+# Rscript 4_prediction_program.R ../../Kaya/block10_intpts_wa.txt Data/Output/Predictions/census_blocks csv 
 # Rscript 4_prediction_program.R Data/Original/Geocovariates/dr0357_cohort_covar_20220404.csv Data/Output/Predictions/Cohort csv
 
 ################################################################################
@@ -56,7 +56,8 @@ set.seed(1)
 #allow R to take input from the command line
 user_arguments <- commandArgs(trailingOnly = TRUE)
 # #test 
-# user_arguments <-c("Data/Original/Geocovariates/dr0311_grid_covars.rda", "Data/Output/Predictions/grid_test", "csv")
+# user_arguments <-c("Data/Original/Geocovariates/dr0311_grid_covars.rda", "Data/Output/Predictions/grid", "csv")
+
 
 if (length(user_arguments) !=3) {
   print("Usage error. Enter: 1. the location of the covariate dataset for which you would like predictions, 2. where the prediction outputs should be saved, and 3. the desired prediction file fomat (csv or rda). Usage:")
@@ -73,8 +74,14 @@ prediction_directory <- user_arguments[2]
 ## create the directory if it does not already exists
 if(!dir.exists(prediction_directory)) {dir.create(prediction_directory)}
 
-# the prediction ffile format (e.g., 'rda')
+# the prediction file format (e.g., 'rda')
 prediction_file_format <- tolower(user_arguments[3])
+
+###########################################################################################
+# SAVE USER TERMINAL INPUTS
+###########################################################################################
+write.table(paste("Rstudio 4_prediction_program.R", paste(user_arguments, collapse = " ")), 
+            file = file.path(prediction_directory, "user_arguments.txt"), row.names = F, col.names = F, quote = F)
 
 ###########################################################################################
 # UPLOAD THE NEW DATASET WHERE PREDICTIONS ARE DESIRED
